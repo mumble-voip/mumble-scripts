@@ -66,14 +66,16 @@ def x2bool(s):
 #--- Default configuration values
 #
 cfgfile = 'mumo.ini'
-default = {'autoaway':(('interval', int, 1),
+default = {'autoaway':(('interval', int, 0),
                        ('timeout', int, 3600),
                        ('mute', x2bool, True),
                        ('deafen', x2bool, False),
-                       ('channel', int, -1),
-                       ('server', int, 1)),
+                       ('channel', int, -1)),
+            'onjoin':(('movetochannel', int, -1),),
+            
+            'murmur':(('server', int, 1),),
            
-           'ice':(('host', str, '127.0.0.1'),
+            'ice':(('host', str, '127.0.0.1'),
                    ('port', int, 6502),
                    ('slice', str, 'Murmur.ice')),
     
@@ -125,22 +127,24 @@ def do_main_program():
     Ice.loadSlice(cfg.ice.slice)
     import Murmur
     
-    def updateUser(server, user, index):
+    def UpdateUserAutoAway(server, user, index):
+        if cfg.autoaway.interval <= 0: return
+        
         update = False
         if not user in index and user.idlesecs > cfg.autoaway.timeout:
             if cfg.autoaway.deafen \
                 and not (user.suppress or user.selfMute or user.mute) \
                 and not (user.selfDeaf or user.deaf):
-                info('Mute and deafen user %s (%d / %d)', user.name, user.session, user.userid)
+                info('autoaway: Mute and deafen user %s (%d / %d)', user.name, user.session, user.userid)
                 user.deaf = True
                 update = True
             elif cfg.autoaway.mute and not (user.suppress or user.selfMute or user.mute):
-                info('Mute user %s (%d / %d)', user.name, user.session, user.userid)
+                info('autoaway: Mute user %s (%d / %d)', user.name, user.session, user.userid)
                 user.mute = True
                 update = True
             
             if cfg.autoaway.channel >= 0 and user.channel != cfg.autoaway.channel:
-                info('Move user %s (%d / %d)', user.name, user.session, user.userid)
+                info('autoaway: Move user %s (%d / %d)', user.name, user.session, user.userid)
                 user.channel = cfg.autoaway.channel
                 update = True
                 
@@ -150,12 +154,12 @@ def do_main_program():
         elif user.session in index and user.idlesecs < cfg.autoaway.timeout:
             index.remove(user.session)
             if cfg.autoaway.deafen:
-                info('Unmute and undeafen user %s (%d / %d)', user.name, user.session, user.userid)
+                info('autoaway: Unmute and undeafen user %s (%d / %d)', user.name, user.session, user.userid)
                 user.mute = False
                 user.deafen = False
                 update = True
             elif cfg.autoaway.mute:
-                info('Unmute user %s (%d / %d)', user.name, user.session, user.userid)
+                info('autoaway: Unmute user %s (%d / %d)', user.name, user.session, user.userid)
                 user.mute = False
                 update = True
         
@@ -176,13 +180,9 @@ def do_main_program():
             
             if interval != 0:
                 # If we have polling tasks perform them
-                try:
-                    while True:
-                        self.handleAutoAway()
-                        time.sleep(interval)
-                except KeyboardInterrupt:
-                    self.interrupted
-                    pass
+                while True:
+                    self.handleAutoAway()
+                    time.sleep(interval)
                     
             else:
                 # Serve till we are stopped
@@ -195,10 +195,10 @@ def do_main_program():
         
         def handleAutoAway(self):
             meta = self.meta
-            server = meta.getServer(cfg.autoaway.server)
+            server = meta.getServer(cfg.murmur.server)
             if server:
                 for user in server.getUsers().itervalues():
-                        updateUser(server, user, self.index)
+                        UpdateUserAutoAway(server, user, self.index)
                             
                                  
         def initializeIceConnection(self):
@@ -224,7 +224,7 @@ def do_main_program():
             adapter = ice.createObjectAdapterWithEndpoints('Callback.Client', 'tcp -h %s' % cfg.ice.host)
             adapter.activate()
         
-            server = meta.getServer(cfg.autoaway.server)
+            server = meta.getServer(cfg.murmur.server)
             if server:
                 info('Setting callback for server %d', server.id())
                 callbackprx = adapter.addWithUUID(ServerCallback(server, self.index,  adapter))
@@ -241,14 +241,19 @@ def do_main_program():
             self.server = server
         
         def userStateChanged(self, u, current=None):
-            updateUser(self.server, u, self.index)
+            UpdateUserAutoAway(self.server, u, self.index)
         
         def userDisconnected(self, u, current=None):
             if u.session in self.index:
                 self.index.remove(u.session)
                 
-        def userConnected(self, u, current=None): pass # Unused callback
-        def channelCreated(self, c, current=None): pass
+        def userConnected(self, u, current=None):
+            if cfg.onjoin.movetochannel >= 0:
+                info('onjoin: Moving user %s (%d / %d)', u.name, u.session, u.userid)
+                u.channel = cfg.onjoin.movetochannel
+                self.server.setState(u)
+                
+        def channelCreated(self, c, current=None): pass # Unused callback
         def channelRemoved(self, c, current=None): pass
         def channelStateChanged(self, c, current=None): pass
         
