@@ -50,7 +50,7 @@ import random
 import traceback
 import optparse
 import thread
-#The next 2 imports may not suceed
+#The next 2 imports may not succeed
 warning=""
 try:
     import ssl
