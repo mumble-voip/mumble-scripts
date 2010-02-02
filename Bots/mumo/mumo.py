@@ -32,7 +32,7 @@
 
 #    mumo.py
 #
-# mumo, the Mumble moderator script that can perform a range of common
+# mumo, the Mumble moderator script can perform a range of common
 # tasks on a Mumble server. It connects to Murmur using Ice.
 #
 # The script can currently perform the following tasks:
@@ -67,7 +67,7 @@ def x2bool(s):
 #
 cfgfile = 'mumo.ini'
 default = {'autoaway':(('interval', int, 1),
-                       ('timeout', int, 10),
+                       ('timeout', int, 3600),
                        ('mute', x2bool, True),
                        ('deafen', x2bool, False),
                        ('channel', int, -1),
