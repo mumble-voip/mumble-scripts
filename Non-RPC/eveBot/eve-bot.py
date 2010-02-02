@@ -1,6 +1,10 @@
 #!/usr/bin/env python
+#
 #Copyright (c) 2009, Philip Cass <frymaster@127001.org>
 #Copyright (c) 2009, Alan Ainsworth <fruitbat@127001.org>
+#
+#Contains code from the Mumble Project:
+#Copyright (C) 2005-2009, Thorvald Natvig <thorvald@natvig.com>
 #
 #All rights reserved.
 #
@@ -17,30 +21,6 @@
 #  contributors may be used to endorse or promote products derived from this
 #  software without specific prior written permission.
 #
-#Contains code from the Mumble Project:
-#Copyright (C) 2005-2009, Thorvald Natvig <thorvald@natvig.com>
-#Copyright (C) 2007, Stefan Gehn <mETz AT gehn DOT net>
-#Copyright (C) 2007, Sebastian Schlingmann <mit_service@users.sourceforge.net>
-#Copyright (C) 2008-2009, Mikkel Krautz <mikkel@krautz.dk>
-#Copyright (C) 2008, Andreas Messer <andi@bupfen.de>
-#Copyright (C) 2007, Trenton Schulz
-#Copyright (C) 2008-2009, Stefan Hacker <dd0t@users.sourceforge.net>
-#
-#All rights reserved.
-#
-#Redistribution and use in source and binary forms, with or without
-#modification, are permitted provided that the following conditions
-#are met:
-#
-#- Redistributions of source code must retain the above copyright notice,
-#  this list of conditions and the following disclaimer.
-#- Redistributions in binary form must reproduce the above copyright notice,
-#  this list of conditions and the following disclaimer in the documentation
-#  and/or other materials provided with the distribution.
-#- Neither the name of the Mumble Developers nor the names of its
-#  contributors may be used to endorse or promote products derived from this
-#  software without specific prior written permission.
-
 #http://frymaster.127001.org/mumble
 
 import socket
