@@ -42,14 +42,12 @@ import struct
 import sys
 import select
 import collections
+import thread
 import threading
-import asyncore
 import signal
 import os
-import random
-import traceback
 import optparse
-import thread
+import platform
 #The next 2 imports may not succeed
 warning=""
 try:
@@ -85,7 +83,7 @@ def discontinue_processing(signl, frme):
         sys.exit(0)
 
 signal.signal( signal.SIGINT, discontinue_processing )
-signal.signal( signal.SIGQUIT, discontinue_processing )
+#signal.signal( signal.SIGQUIT, discontinue_processing )
 signal.signal( signal.SIGTERM, discontinue_processing )
 
 class timedWatcher(threading.Thread):
@@ -402,10 +400,13 @@ class mumbleConnection(threading.Thread):
                         event = (time.time()+self.relayDelay,voicePacket)
                         pp = self.mimicList[session]["plannedPackets"]
                         pp.append(event)
-        #Type 1 = UDPTUnnel (voice data, not a real protobuffers message)                    
+        #Type 1 = UDPTUnnel (voice data, not a real protobuffers message)
         if msgType!=1 and self.verbose:
-            message=self.parseMessage(msgType,stringMessage)
-            print str(type(message)),message
+            try:
+              message=self.parseMessage(msgType,stringMessage)
+              print str(type(message)),message
+            except KeyError:
+              print "Ignoring unknown message of type " + str(msgType)
 
 
     def run(self):
@@ -417,10 +418,10 @@ class mumbleConnection(threading.Thread):
         self.socket.setblocking(0)
         print time.strftime("%a, %d %b %Y %H:%M:%S +0000"),self.threadName,"connected to server"
         pbMess = Mumble_pb2.Version()
-        pbMess.release="1.2.0~beta1"
+        pbMess.release="1.2.0"
         pbMess.version=66048
-        pbMess.os="win"
-        pbMess.os_version="6.0.0.6002.1"
+        pbMess.os=platform.system()
+        pbMess.os_version="evebot1.0.1"
 
         initialConnect=self.packageMessageForSending(messageLookupMessage[type(pbMess)],pbMess.SerializeToString())
 
@@ -441,17 +442,10 @@ class mumbleConnection(threading.Thread):
         self.timedWatcher.start()
         print time.strftime("%a, %d %b %Y %H:%M:%S +0000"),self.threadName,"started timed watcher",self.timedWatcher.threadName
 
-        pollObj=select.poll()
-        pollObj.register(sockFD,select.POLLIN+select.POLLHUP)
-
         while True:
-            pollList=pollObj.poll()
+            pollList,foo,errList=select.select([sockFD],[],[sockFD])
             for item in pollList:
-                if item[0]==sockFD:
-                    if (item[1] & select.POLLHUP) == select.POLLHUP:
-                        print time.strftime("%a, %d %b %Y %H:%M:%S +0000"),self.threadName,"Received hangup from socket"
-                        self.wrapUpThread(True)
-                        break
+                if item==sockFD:
                     self.readPacket()
             if self.readyToClose:
                 if len(self.plannedPackets)==0:
@@ -491,8 +485,6 @@ def main():
     o, arguments = p.parse_args()
     if len(warning)>0:
         sys.exit(1)
-
-    print o.delay
 
     if o.relay_to==None or o.eavesdrop_in==None:
         p.print_help()
