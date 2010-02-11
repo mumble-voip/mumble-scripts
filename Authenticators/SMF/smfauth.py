@@ -331,7 +331,12 @@ def do_main_program():
             if activated == 1 and smf_check_hash(pw, upw, unm):
                 # Authenticated, fetch group memberships
                 try:
-                    sql = 'SELECT groupName FROM %smembergroups WHERE ID_GROUP IN (%s)' % (cfg.database.prefix, str(ug) if not uag else str(ug)+','+uag)
+                    if uag:
+                        groups = str(ug) + ',' + uag
+                    else:
+                        groups = str(ug)
+
+                    sql = 'SELECT groupName FROM %smembergroups WHERE ID_GROUP IN (%s)' % (cfg.database.prefix, groups)
                     cur = threadDB.execute(sql)
                 except threadDbException:
                     return (FALL_THROUGH, None, None)
