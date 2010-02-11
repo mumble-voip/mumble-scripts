@@ -36,7 +36,6 @@
 #    Requirements:
 #        * python >=2.4 and the following python modules:
 #            * ice-python
-#            * PIL >=1.1.5 (only if avatar import is enabled)
 #            * MySQLdb
 #            * daemon (when run as a daemon)
 #
@@ -74,7 +73,6 @@ def x2bool(s):
 #--- Default configuration values
 #
 cfgfile = 'smfauth.ini'
-user_texture_resolution = (600,60)
 default = {'database':(('lib', str, 'MySQLdb'),
                        ('name', str, 'smf'),
                        ('user', str, 'smf'),
@@ -85,13 +83,7 @@ default = {'database':(('lib', str, 'MySQLdb'),
             'forum':(('path', str, 'http://localhost/smf/'),),
                      
             'user':(('id_offset', int, 1000000000),
-                    ('avatar_enable', x2bool, False),
-                    ('avatar_username_enable', x2bool, True),
-                    ('avatar_username_font', str, 'verdana.ttf'),
-                    ('avatar_username_fontsize', int, 30),
-                    ('avatar_username_x', int, 65),
-                    ('avatar_username_y', int, 10),
-                    ('avatar_username_fill', str, '#FF0000')),
+                    ('avatar_enable', x2bool, False)),
                     
             'ice':(('host', str, '127.0.0.1'),
                    ('port', int, 6502),
@@ -290,17 +282,6 @@ def do_main_program():
             Murmur.ServerUpdatingAuthenticator.__init__(self)
             self.server = server
             
-            if cfg.user.avatar_enable and cfg.user.avatar_username_enable:
-                # Load font
-                try:
-                    self.font = ImageFont.truetype(cfg.user.avatar_username_font, cfg.user.avatar_username_fontsize)
-                except IOError, e:
-                    error("Could not load font for username texture overlay from '%s': %s", cfg.user.avatar_username_font, e)
-                    self.font = None
-            else:
-                self.font = None
-            
-            
         def authenticate(self, name, pw, certlist, certhash, strong, current = None):
             """
             This function is called to authenticate a user
@@ -313,7 +294,7 @@ def do_main_program():
             if name == 'SuperUser':
                 debug('Forced fall through for SuperUser')
                 return (FALL_THROUGH, None, None)
-            print entity_encode(name)
+
             try:
                 sql = 'SELECT ID_MEMBER, passwd, ID_GROUP, memberName, realName, additionalGroups, is_activated FROM %smembers WHERE LOWER(memberName) = LOWER(%%s) OR realName = %%s' % cfg.database.prefix
                 cur = threadDB.execute(sql, (name, entity_encode(name)))
@@ -481,39 +462,14 @@ def do_main_program():
             
             try:
                 handle = urllib2.urlopen(avatar_file)
-                file = StringIO.StringIO(handle.read())
+                file = handle.read()
                 handle.close()
             except urllib2.URLError, e:
                 warning('Image download for "%s" (%d) failed: %s', avatar_file, id, str(e))
                 return FALL_THROUGH
             
-            try:
-                # Load image and scale it
-                img = Image.open(file).convert("RGBA")
-                img.thumbnail((user_texture_resolution[0],user_texture_resolution[1]), Image.ANTIALIAS)
-                img = img.transform(user_texture_resolution,
-                                    Image.EXTENT,
-                                    (0, 0, user_texture_resolution[0], user_texture_resolution[1]))
-                
-                if cfg.user.avatar_username_enable and self.font:
-                    # Insert user name into picture
-                    draw = ImageDraw.Draw(img)
-                    draw.text((cfg.user.avatar_username_x, cfg.user.avatar_username_y),
-                                entity_decode(username),
-                                fill = cfg.user.avatar_username_fill,
-                                font = self.font)
-                
-                r,g,b,a = img.split()
-                raw = Image.merge('RGBA', (b, g, r, a)).tostring()
-                comp = compress(raw)
-                res = pack('>L', len(raw)) + comp
-            except Exception, e:
-                warning('Image manipulation for "%s" (%d) failed', avatar_file, id)
-                debug(e)
-                return FALL_THROUGH
-
-            self.texture_cache[avatar_file] = res            
-            return res
+            self.texture_cache[avatar_file] = file            
+            return self.texture_cache[avatar_file]
             
         
         def registerUser(self, name, current = None):
@@ -673,24 +629,6 @@ if __name__ == '__main__':
         print>>sys.stderr, 'Fatal error, could not load config file from "%s"' % cfgfile
         sys.exit(1)
 
-    # Do conditional imports
-    if cfg.user.avatar_enable:
-        # If we use avatars we need PIL to manipulate it and some other stuff for working with them
-        try:
-            import Image
-            if cfg.user.avatar_username_enable:
-                import ImageFont
-                import ImageDraw
-        except ImportError, e:
-            print>>sys.stderr, 'Error, could not import PIL library, '\
-            'please install the missing dependency and restart the authenticator'
-            sys.exit(1)
-
-        import StringIO
-        
-        from zlib   import compress
-        from struct import pack
-        
     try:
         db = __import__(cfg.database.lib)
     except ImportError, e:
