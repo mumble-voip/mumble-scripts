@@ -87,7 +87,8 @@ default = {'database':(('lib', str, 'MySQLdb'),
                     
             'ice':(('host', str, '127.0.0.1'),
                    ('port', int, 6502),
-                   ('slice', str, 'Murmur.ice')),
+                   ('slice', str, 'Murmur.ice'),
+                   ('secret', str, '')),
                    
             'iceraw':None,
                    
@@ -251,7 +252,13 @@ def do_main_program():
             configured servers
             """
             ice = self.communicator()
-            
+
+            if cfg.ice.secret:
+                debug('Using shared ice secret')
+                ice.getImplicitContext().put("secret", cfg.ice.secret)
+            elif not cfg.glacier.enabled:
+                warning('Consider using an ice secret to improve security')
+                
             if cfg.glacier.enabled:
                 #info('Connecting to Glacier2 server (%s:%d)', glacier_host, glacier_port)
                 error('Glacier support not implemented yet')
@@ -267,13 +274,18 @@ def do_main_program():
         
             adapter = ice.createObjectAdapterWithEndpoints('Callback.Client', 'tcp -h %s' % cfg.ice.host)
             adapter.activate()
-        
-            for server in meta.getBootedServers():
-                if not cfg.murmur.servers or server.id() in cfg.murmur.servers:
-                    info('Setting authenticator for server %d', server.id())
-                    authprx = adapter.addWithUUID(smfauthenticator(server, adapter))
-                    auth = Murmur.ServerUpdatingAuthenticatorPrx.uncheckedCast(authprx)
-                    server.setAuthenticator(auth)
+            
+            try:
+                for server in meta.getBootedServers():
+                    if not cfg.murmur.servers or server.id() in cfg.murmur.servers:
+                        info('Setting authenticator for server %d', server.id())
+                        authprx = adapter.addWithUUID(smfauthenticator(server, adapter))
+                        auth = Murmur.ServerUpdatingAuthenticatorPrx.uncheckedCast(authprx)
+                        server.setAuthenticator(auth)
+            except Murmur.InvalidSecretException:
+                error('Invalid ice secret')
+                return False
+            
             return True
                     
     class smfauthenticator(Murmur.ServerUpdatingAuthenticator):
@@ -583,6 +595,8 @@ def do_main_program():
     initdata.properties = Ice.createProperties([], initdata.properties)
     for prop, val in cfg.iceraw:
         initdata.properties.setProperty(prop, val)
+    
+    initdata.properties.setProperty("Ice.ImplicitContext", "Shared")
     initdata.logger = CustomLogger()
     
     app = smfauthenticatorApp()
