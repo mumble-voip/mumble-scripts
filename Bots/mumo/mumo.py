@@ -77,7 +77,8 @@ default = {'autoaway':(('interval', int, 0),
            
             'ice':(('host', str, '127.0.0.1'),
                    ('port', int, 6502),
-                   ('slice', str, 'Murmur.ice')),
+                   ('slice', str, 'Murmur.ice'),
+                   ('secret', str, '')),
     
             'iceraw':None,
 
@@ -207,7 +208,13 @@ def do_main_program():
             configured servers
             """
             ice = self.communicator()
-            
+
+            if cfg.ice.secret:
+                debug('Using shared ice secret')
+                ice.getImplicitContext().put("secret", cfg.ice.secret)
+            elif not cfg.glacier.enabled:
+                warning('Consider using an ice secret to improve security')
+
             if cfg.glacier.enabled:
                 #info('Connecting to Glacier2 server (%s:%d)', glacier_host, glacier_port)
                 error('Glacier support not implemented yet')
@@ -224,7 +231,12 @@ def do_main_program():
             adapter = ice.createObjectAdapterWithEndpoints('Callback.Client', 'tcp -h %s' % cfg.ice.host)
             adapter.activate()
         
-            server = meta.getServer(cfg.murmur.server)
+            try:
+                server = meta.getServer(cfg.murmur.server)
+            except Murmur.InvalidSecretException:
+                error('Invalid ice secret')
+                return False
+            
             if server:
                 info('Setting callback for server %d', server.id())
                 callbackprx = adapter.addWithUUID(ServerCallback(server, self.index,  adapter))
@@ -287,6 +299,8 @@ def do_main_program():
     initdata.properties = Ice.createProperties([], initdata.properties)
     for prop, val in cfg.iceraw:
         initdata.properties.setProperty(prop, val)
+
+    initdata.properties.setProperty("Ice.ImplicitContext", "Shared")
     initdata.logger = CustomLogger()
     
     app = mumoApp()
