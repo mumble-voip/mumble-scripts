@@ -38,10 +38,12 @@
 #
 
 import os
+import sys
 
 # Default settings
 prxstr = "Meta:tcp -h 127.0.0.1 -p 6502"
 slicefile = "Murmur.ice"
+secret = ''
 
 print "Import ice...",
 import Ice
@@ -55,7 +57,17 @@ print "Import dynamically compiled murmur class...",
 import Murmur
 print "Done"
 print "Establish ice connection...",
-ice = Ice.initialize()
+props = Ice.createProperties(sys.argv)
+props.setProperty("Ice.ImplicitContext", "Shared")
+idata = Ice.InitializationData()
+idata.properties = props
+
+ice = Ice.initialize(idata)
+
+if secret:
+    print "[protected]...",
+    ice.getImplicitContext().put("secret", secret)
+    
 prx = ice.stringToProxy(prxstr)
 murmur = Murmur.MetaPrx.checkedCast(prx)
 m = murmur
@@ -68,10 +80,14 @@ else:
 	
 print "Murmur object accessible via '%s.murmur' or '%s.m'" % (prefix,
                                                               prefix)
-sl = m.getBootedServers()
-s = sl[0] if sl else None
-print "%d booted servers in '%ssl', '%ss' contains '%s'" % (len(sl), prefix, prefix, repr(s))
 
-print "--- Reached interactive mode ---"
+try:
+    sl = m.getBootedServers()
+except Murmur.InvalidSecretException:
+    print "Error: Invalid ice secret. Mice won't work."
+else:
+    s = sl[0] if sl else None
+    print "%d booted servers in '%ssl', '%ss' contains '%s'" % (len(sl), prefix, prefix, repr(s))
+    print "--- Reached interactive mode ---"
 
 
