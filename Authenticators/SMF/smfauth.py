@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8
 
 # Copyright (C) 2010 Stefan Hacker <dd0t@users.sourceforge.net>
