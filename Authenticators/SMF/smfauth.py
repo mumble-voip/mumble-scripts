@@ -282,18 +282,45 @@ def do_main_program():
                         authprx = adapter.addWithUUID(smfauthenticator(server, adapter))
                         auth = Murmur.ServerUpdatingAuthenticatorPrx.uncheckedCast(authprx)
                         server.setAuthenticator(auth)
-            except Murmur.InvalidSecretException:
+            except (Murmur.InvalidSecretException, Ice.UnknownUserException), e:
+                if hasattr(e, "unknown") and e.unknown != "Murmur::InvalidSecretException":
+                    # Special handling for Murmur 1.2.2 servers with invalid slice files
+                    raise e
+                
                 error('Invalid ice secret')
                 return False
             
             return True
-                    
+
+    def checkSecret(func):
+        """
+        Decorator that checks whether the server transmitted the right secret
+        if a secret is supposed to be used.
+        """
+        if not cfg.ice.secret:
+            return func
+        
+        def newfunc(*args, **kws):
+            if "current" in kws:
+                current = kws["current"]
+            else:
+                current = args[-1]
+            
+            if 'secret' not in current.ctx or current.ctx['secret'] != cfg.ice.secret:
+                error('Server transmitted invalid secret. Possible injection attempt.')
+                raise Murmur.InvalidSecretException()
+            
+            return func(*args, **kws)
+        
+        return newfunc
+         
     class smfauthenticator(Murmur.ServerUpdatingAuthenticator):
         texture_cache = {}
         def __init__(self, server, adapter):
             Murmur.ServerUpdatingAuthenticator.__init__(self)
             self.server = server
-            
+
+        @checkSecret        
         def authenticate(self, name, pw, certlist, certhash, strong, current = None):
             """
             This function is called to authenticate a user
@@ -346,7 +373,7 @@ def do_main_program():
             info('Failed authentication attempt for user: "%s" (%d)', name, uid + cfg.user.id_offset)
             return (AUTH_REFUSED, None, None)
             
-        
+        @checkSecret
         def getInfo(self, id, current = None):
             """
             Gets called to fetch user specific information
@@ -356,7 +383,7 @@ def do_main_program():
             debug('getInfo for %d -> denied', id)
             return (False, None)
         
-        
+        @checkSecret
         def nameToId(self, name, current = None):
             """
             Gets called to get the id for a given username
@@ -382,7 +409,7 @@ def do_main_program():
             debug('nameToId %s -> %d', name, (res[0] + cfg.user.id_offset))
             return res[0] + cfg.user.id_offset
         
-        
+        @checkSecret
         def idToName(self, id, current = None):
             """
             Gets called to get the username for a given id
@@ -414,7 +441,7 @@ def do_main_program():
             debug('idToName %d -> ?', id)
             return FALL_THROUGH
             
-            
+        @checkSecret
         def idToTexture(self, id, current = None):
             """
             Gets called to get the corresponding texture for a user
@@ -483,7 +510,7 @@ def do_main_program():
             self.texture_cache[avatar_file] = file            
             return self.texture_cache[avatar_file]
             
-        
+        @checkSecret
         def registerUser(self, name, current = None):
             """
             Gets called when the server is asked to register a user.
@@ -493,7 +520,7 @@ def do_main_program():
             debug('registerUser "%s" -> fall through', name)
             return FALL_THROUGH
         
-        
+        @checkSecret
         def unregisterUser(self, id, current = None):
             """
             Gets called when the server is asked to unregister a user.
@@ -505,7 +532,7 @@ def do_main_program():
             debug('unregisterUser %d -> fall through', id)
             return FALL_THROUGH
         
-        
+        @checkSecret
         def getRegisteredUsers(self, filter, current = None):
             """
             Returns a list of usernames in the smf database which contain
@@ -529,7 +556,7 @@ def do_main_program():
             debug ('getRegisteredUsers -> %d results for filter "%s"', len(res), filter)
             return dict([(a + cfg.user.id_offset, b) for a,b in res])
         
-        
+        @checkSecret
         def setInfo(self, id, info, current = None):
             """
             Gets called when the server is supposed to save additional information
@@ -542,7 +569,7 @@ def do_main_program():
             debug('setInfo %d -> fall through', id)
             return FALL_THROUGH
         
-        
+        @checkSecret
         def setTexture(self, id, texture, current = None):
             """
             Gets called when the server is asked to update the user texture of a user
