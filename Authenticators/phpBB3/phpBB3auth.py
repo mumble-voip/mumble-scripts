@@ -47,13 +47,15 @@ import urllib2
 import logging
 import ConfigParser
 
+from threading  import Timer
+from optparse   import OptionParser
 from logging    import (debug,
                         info,
                         warning,
                         error,
                         critical,
                         getLogger)
-from optparse   import OptionParser
+
 try:
     from hashlib import md5
 except ImportError: # python 2.4 compat
@@ -86,7 +88,8 @@ default = {'database':(('lib', str, 'MySQLdb'),
             'ice':(('host', str, '127.0.0.1'),
                    ('port', int, 6502),
                    ('slice', str, 'Murmur.ice'),
-                   ('secret', str, '')),
+                   ('secret', str, ''),
+                   ('watchdog', int, 30)),
                    
             'iceraw':None,
                    
@@ -206,13 +209,18 @@ def do_main_program():
             
             if not self.initializeIceConnection():
                 return 1
-            
+
+            if cfg.ice.watchdog > 0:
+                self.metaUptime = -1
+                self.checkConnection()
+                
             # Serve till we are stopped
             self.communicator().waitForShutdown()
+            self.watchdog.cancel()
             
             if self.interrupted():
                 warning('Caught interrupt, shutting down')
-            
+                
             threadDB.disconnect()
             return 0
         
@@ -236,31 +244,77 @@ def do_main_program():
     
             info('Connecting to Ice server (%s:%d)', cfg.ice.host, cfg.ice.port)
             base = ice.stringToProxy('Meta:tcp -h %s -p %d' % (cfg.ice.host, cfg.ice.port))
-            try:
-                meta = Murmur.MetaPrx.checkedCast(base)
-            except Ice.LocalException, e:
-                error('Could not connect to Ice server, error %d: %s', e.error, str(e).replace('\n', ' '))
-                return False
+            self.meta = Murmur.MetaPrx.uncheckedCast(base)
         
             adapter = ice.createObjectAdapterWithEndpoints('Callback.Client', 'tcp -h %s' % cfg.ice.host)
             adapter.activate()
             
+            metacbprx = adapter.addWithUUID(metaCallback(self))
+            self.metacb = Murmur.MetaCallbackPrx.uncheckedCast(metacbprx)
+            
+            authprx = adapter.addWithUUID(phpBBauthenticator())
+            self.auth = Murmur.ServerUpdatingAuthenticatorPrx.uncheckedCast(authprx)
+            
+            return self.attachCallbacks()
+        
+        def attachCallbacks(self):
+            """
+            Attaches all callbacks for meta and authenticators
+            """
+            
+            # Ice.ConnectionRefusedException
+            debug('Attaching callbacks')
             try:
-                for server in meta.getBootedServers():
+                info('Attaching meta callback')
+                self.meta.addCallback(self.metacb)
+                
+                for server in self.meta.getBootedServers():
                     if not cfg.murmur.servers or server.id() in cfg.murmur.servers:
-                        info('Setting authenticator for server %d', server.id())
-                        authprx = adapter.addWithUUID(phpBBauthenticator(server, adapter))
-                        auth = Murmur.ServerUpdatingAuthenticatorPrx.uncheckedCast(authprx)
-                        server.setAuthenticator(auth)
-            except (Murmur.InvalidSecretException, Ice.UnknownUserException), e:
-                if hasattr(e, "unknown") and e.unknown != "Murmur::InvalidSecretException":
-                    # Special handling for Murmur 1.2.2 servers with invalid slice files
+                        info('Setting authenticator for virtual server %d', server.id())
+                        server.setAuthenticator(self.auth)
+                        
+            except (Murmur.InvalidSecretException, Ice.UnknownUserException, Ice.ConnectionRefusedException), e:
+                if type(e) == Ice.ConnectionRefusedException:
+                    error('Server refused connection')
+                elif (type(e) == Murmur.InvalidSecretException) or \
+                     (type(e) == Ice.UnknownUserException and e.unknown == 'Murmur::InvalidSecretException'):
+                    error('Invalid ice secret')
+                else:
+                    # We do not actually want to handle this one, re-raise it
                     raise e
                 
-                error('Invalid ice secret')
+                self.connected = False
                 return False
-            
+
+            self.connected = True
             return True
+        
+        def checkConnection(self):
+            """
+            Tries to retrieve the server uptime to determine wheter the server is
+            still responsive or has restarted in the meantime
+            """
+            #debug('Watchdog run')
+            try:
+                uptime = self.meta.getUptime()
+                if self.metaUptime > 0: 
+                    # Check if the server didn't restart since we last checked, we assume
+                    # since the last time we ran this check the watchdog interval +/- 5s
+                    # have passed. This should be replaced by implementing a Keepalive in
+                    # Murmur.
+                    if not ((uptime - 5) <= (self.metaUptime + cfg.ice.watchdog) <= (uptime + 5)):
+                        # Seems like the server restarted, re-attach the callbacks
+                        self.attachCallbacks()
+                        
+                self.metaUptime = uptime
+            except Ice.Exception, e:
+                error('Connection to server lost, will try to reestablish callbacks in next watchdog run (%ds)', cfg.ice.watchdog)
+                debug(str(e))
+                self.attachCallbacks()
+
+            # Renew the timer
+            self.watchdog = Timer(cfg.ice.watchdog, self.checkConnection)
+            self.watchdog.start()
         
     def checkSecret(func):
         """
@@ -271,7 +325,7 @@ def do_main_program():
             return func
         
         def newfunc(*args, **kws):
-            if "current" in kws:
+            if 'current' in kws:
                 current = kws["current"]
             else:
                 current = args[-1]
@@ -283,12 +337,56 @@ def do_main_program():
             return func(*args, **kws)
         
         return newfunc
+    
+    class metaCallback(Murmur.MetaCallback):
+        def __init__(self, app):
+            Murmur.MetaCallback.__init__(self)
+            self.app = app
+        
+        @checkSecret
+        def started(self, server, current = None):
+            """
+            This function is called when a virtual server is started
+            and makes sure an authenticator gets attached if needed.
+            """
+            if not cfg.murmur.servers or server.id() in cfg.murmur.servers:
+                info('Setting authenticator for virtual server %d', server.id())
+                try:
+                    server.setAuthenticator(app.auth)
+                # Apparently this server was restarted without us noticing
+                except (Murmur.InvalidSecretException, Ice.UnknownUserException), e:
+                    if hasattr(e, "unknown") and e.unknown != "Murmur::InvalidSecretException":
+                        # Special handling for Murmur 1.2.2 servers with invalid slice files
+                        raise e
                     
+                    error('Invalid ice secret')
+                    return
+            else:
+                debug('Virtual server %d got started', server.id())
+
+        @checkSecret
+        def stopped(self, server, current = None):
+            """
+            This function is called when a virtual server is stopped
+            """
+            if self.app.connected:
+                # Only try to output the server id if we think we are still connected to prevent
+                # flooding of our thread pool
+                try:
+                    if not cfg.murmur.servers or server.id() in cfg.murmur.servers:
+                        info('Authenticated virtual server %d got stopped', server.id())
+                    else:
+                        debug('Virtual server %d got stopped', server.id())
+                    return
+                except Ice.ConnectionRefusedException:
+                    self.app.connected = False
+            
+            debug('Server shutdown stopped a virtual server')
+         
     class phpBBauthenticator(Murmur.ServerUpdatingAuthenticator):
         texture_cache = {}
-        def __init__(self, server, adapter):
+        def __init__(self):
             Murmur.ServerUpdatingAuthenticator.__init__(self)
-            self.server = server
 
         @checkSecret
         def authenticate(self, name, pw, certlist, certhash, strong, current = None):
@@ -536,7 +634,6 @@ def do_main_program():
             # If we don't use textures from phpbb we let mumble save it
             debug('setTexture %d -> fall through', id)
             return FALL_THROUGH
-            
         
     class CustomLogger(Ice.Logger):
         """
@@ -546,13 +643,13 @@ def do_main_program():
         
         def __init__(self):
             Ice.Logger.__init__(self)
-            self._log = getLogger("Ice")
+            self._log = getLogger('Ice')
             
         def _print(self, message):
             self._log.info(message)
             
         def trace(self, category, message):
-            self._log.debug("Trace %s: %s", category, message)
+            self._log.debug('Trace %s: %s', category, message)
             
         def warning(self, message):
             self._log.warning(message)
@@ -569,7 +666,7 @@ def do_main_program():
     for prop, val in cfg.iceraw:
         initdata.properties.setProperty(prop, val)
         
-    initdata.properties.setProperty("Ice.ImplicitContext", "Shared")
+    initdata.properties.setProperty('Ice.ImplicitContext', 'Shared')
     initdata.logger = CustomLogger()
     
     app = phpBBauthenticatorApp()
