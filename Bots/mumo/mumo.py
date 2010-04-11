@@ -125,7 +125,7 @@ def do_main_program():
     #--- Callback implementation
     #    All of this has to go in here so we can correctly daemonize the tool
     #    without loosing the file descriptors opened by the Ice module
-    Ice.loadSlice(cfg.ice.slice)
+    Ice.loadSlice('', ['-I' + Ice.getSliceDir(), cfg.ice.slice])
     import Murmur
     
     def UpdateUserAutoAway(server, user, index):

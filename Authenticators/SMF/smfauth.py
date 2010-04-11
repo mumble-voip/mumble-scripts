@@ -46,7 +46,6 @@ import thread
 import logging
 import urllib2
 import ConfigParser
-import re
 
 from logging    import (debug,
                         info,
@@ -227,7 +226,7 @@ def do_main_program():
     #--- Authenticator implementation
     #    All of this has to go in here so we can correctly daemonize the tool
     #    without loosing the file descriptors opened by the Ice module
-    Ice.loadSlice(cfg.ice.slice)
+    Ice.loadSlice('', ['-I' + Ice.getSliceDir(), cfg.ice.slice])
     import Murmur
     
     class smfauthenticatorApp(Ice.Application):
@@ -276,11 +275,12 @@ def do_main_program():
             adapter.activate()
             
             try:
+                authprx = adapter.addWithUUID(smfauthenticator())
+                auth = Murmur.ServerUpdatingAuthenticatorPrx.uncheckedCast(authprx)
+                
                 for server in meta.getBootedServers():
                     if not cfg.murmur.servers or server.id() in cfg.murmur.servers:
                         info('Setting authenticator for server %d', server.id())
-                        authprx = adapter.addWithUUID(smfauthenticator(server, adapter))
-                        auth = Murmur.ServerUpdatingAuthenticatorPrx.uncheckedCast(authprx)
                         server.setAuthenticator(auth)
             except (Murmur.InvalidSecretException, Ice.UnknownUserException), e:
                 if hasattr(e, "unknown") and e.unknown != "Murmur::InvalidSecretException":
@@ -316,9 +316,8 @@ def do_main_program():
          
     class smfauthenticator(Murmur.ServerUpdatingAuthenticator):
         texture_cache = {}
-        def __init__(self, server, adapter):
+        def __init__(self):
             Murmur.ServerUpdatingAuthenticator.__init__(self)
-            self.server = server
 
         @checkSecret        
         def authenticate(self, name, pw, certlist, certhash, strong, current = None):
