@@ -79,7 +79,7 @@ except Exception, e:
     while not os.path.exists(slicefile):
          slicefile = raw_input("Path to slicefile: ")
     print "Load slice (%s)..." % slicefile,
-    Ice.loadSlice('', ['-I' + Ice.getSliceDir(), 'Murmur.ice'])
+    Ice.loadSlice('', ['-I' + Ice.getSliceDir(), slicefile])
     print "Done"
 	
 print "Import dynamically compiled murmur class...",

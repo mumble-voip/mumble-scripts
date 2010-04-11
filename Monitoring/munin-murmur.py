@@ -46,7 +46,7 @@ iceport=6502
 
 
 import Ice, sys
-Ice.loadSlice('', ['-I' + Ice.getSliceDir(), cfg.ice.slice])
+Ice.loadSlice('', ['-I' + Ice.getSliceDir(), iceslice])
 ice = Ice.initialize()
 import Murmur
 
