@@ -168,6 +168,14 @@ class threadDB(object):
     cursor = classmethod(cursor)
     
     def execute(cls, *args, **kwargs):
+        if "threadDB__retry_execution__" in kwargs:
+            # Have a magic keyword so we can call ourselves while preventing
+            # an infinite loop
+            del kwargs["threadDB__retry_execution__"]
+            retry = False
+        else:
+            retry = True
+        
         c = cls.cursor()
         try:
             c.execute(*args, **kwargs)
@@ -175,7 +183,14 @@ class threadDB(object):
             error('Database operational error %d: %s', e.args[0], e.args[1])
             c.close()
             cls.invalidate_connection()
-            raise threadDbException()
+            if retry:
+                # Make sure we only retry once
+                info('Retrying database operation')
+                kwargs["threadDB__retry_execution__"] = True
+                c = cls.execute(*args, **kwargs)
+            else:
+                error('Database operation failed ultimately')
+                raise threadDbException()
         return c
     execute = classmethod(execute)
     
