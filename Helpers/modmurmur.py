@@ -52,7 +52,7 @@ class MurmurServer(object):
     def __init__(self):
         self.__mm_ice = None
         self.__mm_prx = None
-        self.__mm_murmur = None
+        self.Murmur = None
         self.__mm_meta = None
         self.__mm_log = getLogger(__name__ + "." + type(self).__name__)
         self.__mm_version = None
@@ -95,7 +95,7 @@ class MurmurServer(object):
         
         try:
             # Try to get the loaded module for this slice from our cache
-            self.__mm_murmur = self.__mm_slices[slice]
+            self.Murmur = self.__mm_slices[slice]
             self.__mm_log.debug("Slice cache hit, reusing loaded module")
         except KeyError:
             # We do not have the module for this specific slice imported yet
@@ -123,15 +123,15 @@ class MurmurServer(object):
             
             self.__mm_log.debug("Loading new module")
             try:
-                self.__mm_murmur = __import__("Murmur%d" % len(self.__mm_slices)).Murmur
-                self.__mm_slices[slice] = self.__mm_murmur
+                self.Murmur = __import__("Murmur%d" % len(self.__mm_slices)).Murmur
+                self.__mm_slices[slice] = self.Murmur
             except ImportError, e:
                 self.__mm_log.critical("Failed to load dynamically generated module")
                 self.__mm_log.exception(e)
                 return False
         
         # Get the meta object for the server
-        self.__mm_meta = self.__mm_murmur.MetaPrx.uncheckedCast(self.__mm_prx)
+        self.__mm_meta = self.Murmur.MetaPrx.uncheckedCast(self.__mm_prx)
         
         self.__mm_log.debug("Map meta into self")
         for name in dir(self.__mm_meta):
