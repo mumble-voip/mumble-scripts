@@ -47,26 +47,27 @@ from logging import (getLogger, basicConfig, DEBUG)
 #basicConfig(level = DEBUG)
 
 class MurmurServer(object):
-    __mm_slices = {}
+    __slices = {}
     
-    def __init__(self):
-        self.__mm_ice = None
-        self.__mm_prx = None
+    def __init__(self, compat_slices = 'legacy_slices/'):
+        self.__legacy_slices = compat_slices
+        self.__ice = None
+        self.__prx = None
         self.Murmur = None
-        self.__mm_meta = None
-        self.__mm_log = getLogger(__name__ + "." + type(self).__name__)
-        self.__mm_version = None
-        self.__mm_mappings = []
+        self.__meta = None
+        self.__log = getLogger(__name__ + "." + type(self).__name__)
+        self.__version = None
+        self.__mappings = []
         
     def connect(self, host = "127.0.0.1", port = 6502, secret = None, prxstr = None):
-        if self.__mm_ice:
-            self.__mm_log.warning("Connection attempt while already connected, disconnect first")
+        if self.__ice:
+            self.__log.warning("Connection attempt while already connected, disconnect first")
             return True
         
         if not prxstr:
             prxstr = "Meta:tcp -h %s -p %d -t 1000" % (host, port)
         
-        self.__mm_log.info("Connecting to proxy: %s", prxstr)
+        self.__log.info("Connecting to proxy: %s", prxstr)
             
         props = Ice.createProperties(sys.argv)
         props.setProperty("Ice.ImplicitContext", "Shared")
@@ -75,95 +76,138 @@ class MurmurServer(object):
         idata.properties = props
         
         ice = Ice.initialize(idata)
-        self.__mm_ice = ice
+        self.__ice = ice
 
         if secret:
-            __mm_ice.getImplicitContext().put("secret", secret)
+            __ice.getImplicitContext().put("secret", secret)
             
         prx = ice.stringToProxy(prxstr)
-        self.__mm_prx = prx
+        self.__prx = prx
         
-        self.__mm_log.debug("Retrieve slicefile from target host")
-        
-        # Dynamically retrieve our slicefile
+        self.__log.debug("Retrieve version from target host")
         try:
-            slice = IcePy.Operation('getSlice', Ice.OperationMode.Idempotent, Ice.OperationMode.Idempotent, True, (), (), (), IcePy._t_string, ()).invoke(prx, ((), None))
+            version = IcePy.Operation('getVersion', Ice.OperationMode.Idempotent, Ice.OperationMode.Idempotent, True, (), (), (((), IcePy._t_int), ((), IcePy._t_int), ((), IcePy._t_int), ((), IcePy._t_string)), None, ()).invoke(prx, ((), None))
+            major, minor, patch, text = version
+            self.__log.debug("Server version is %s", str(version))
         except Exception, e:
-            self.__mm_log.critical("Failed to retrieve slicefile from target host")
-            self.__mm_log.exception(e)
+            self.__log.critical("Failed to retrieve version from target host")
+            self.__log.exception(e)
             return False
+        
+        # Find out what slicefile we need
+        slicefile = None
+        if major == 1:
+            if minor <= 0:
+                # We don't support 0.X.X
+                critical("Server version not supported: %s", version)
+                return False
+            elif minor == 1:
+                # Use 1.1.8 slice for all 1.1.X versions
+                self.__log.debug("Using 1.1.8 legacy slice for server with version %s", version)
+                slicefile = "Murmur118.ice"
+            elif minor == 2:
+                # For 1.2.X we have three legacy slices
+                if patch == 0:
+                    self.__log.debug("Using 1.2.0 legacy slice for server with version %s", version)
+                    slicefile = "Murmur120.ice"
+                elif patch == 1:
+                    self.__log.debug("Using 1.2.1 legacy slice for server with version %s", version)
+                    slicefile = "Murmur121.ice"
+                elif patch == 2:
+                    self.__log.debug("Using 1.2.2 legacy slice for server with version %s", version)
+                    slicefile = "Murmur122.ice"
+                    
+        if slicefile:
+            # Load the legacy slice into memory
+            try:
+                self.__log.debug("Load legacy slice from %s", self.__legacy_slices + slicefile)
+                slice = open(self.__legacy_slices + slicefile, "r").read()
+            except Exception, e:
+                self.__log.critical("Failed to load legacy slice from %s", self.__legacy_slices + slicefile)
+                self.__log.exception(e)
+                return False
+        else:
+            # Seems like this is version 1.2.3 or greater, dynload the slice file
+            self.__log.debug("Retrieve slicefile from target host")
+            
+            try:
+                slice = IcePy.Operation('getSlice', Ice.OperationMode.Idempotent, Ice.OperationMode.Idempotent, True, (), (), (), IcePy._t_string, ()).invoke(prx, ((), None))
+            except Exception, e:
+                self.__log.critical("Failed to retrieve slicefile from target host")
+                self.__log.exception(e)
+                return False
         
         try:
             # Try to get the loaded module for this slice from our cache
-            self.Murmur = self.__mm_slices[slice]
-            self.__mm_log.debug("Slice cache hit, reusing loaded module")
+            self.Murmur = self.__slices[slice]
+            self.__log.debug("Slice cache hit, reusing loaded module")
         except KeyError:
             # We do not have the module for this specific slice imported yet
             # so do it now
-            self.__mm_log.debug("Slice cache miss, generating new module (%s)", '[["python:package:Murmur%d"]]\n' % len(self.__mm_slices))
+            self.__log.debug("Slice cache miss, generating new module (%s)", '[["python:package:Murmur%d"]]\n' % len(self.__slices))
             (dynslicefiledesc, dynslicefilepath)  = tempfile.mkstemp(suffix = '.ice')
             dynslicefile = os.fdopen(dynslicefiledesc, 'w')
-            dynslicefile.write('[["python:package:Murmur%d"]]\n' % len(self.__mm_slices) + slice)
+            dynslicefile.write('[["python:package:Murmur%d"]]\n' % len(self.__slices) + slice)
             dynslicefile.flush()
             
             try:
                 if Ice.getSliceDir():
                     Ice.loadSlice('', ['-I' + Ice.getSliceDir(), dynslicefilepath])
                 else:
-                    self.__mm_log.warning("Ice.getSliceDir() return None, consider updating Ice as this might break with recent servers")
+                    self.__log.warning("Ice.getSliceDir() return None, consider updating Ice as this might break with recent servers")
                     Ice.loadSlice('', [dynslicefilepath])
             except Exception, e:
-                self.__mm_log.critical("Failed to dynload slice")
-                self.__mm_log.exception(e)
+                self.__log.critical("Failed to dynload slice")
+                self.__log.exception(e)
                 return False
             finally:
                 # Make sure we clean up after ourselves
                 dynslicefile.close()
                 os.remove(dynslicefilepath)
             
-            self.__mm_log.debug("Loading new module")
+            self.__log.debug("Loading new module")
             try:
-                self.Murmur = __import__("Murmur%d" % len(self.__mm_slices)).Murmur
-                self.__mm_slices[slice] = self.Murmur
+                self.Murmur = __import__("Murmur%d" % len(self.__slices)).Murmur
+                self.__slices[slice] = self.Murmur
             except ImportError, e:
-                self.__mm_log.critical("Failed to load dynamically generated module")
-                self.__mm_log.exception(e)
+                self.__log.critical("Failed to load dynamically generated module")
+                self.__log.exception(e)
                 return False
         
         # Get the meta object for the server
-        self.__mm_meta = self.Murmur.MetaPrx.uncheckedCast(self.__mm_prx)
+        self.__meta = self.Murmur.MetaPrx.uncheckedCast(self.__prx)
         
-        self.__mm_log.debug("Map meta into self")
-        for name in dir(self.__mm_meta):
+        self.__log.debug("Map meta into self")
+        for name in dir(self.__meta):
             if not name.startswith("_"):
                 if hasattr(self, name):
-                    self.__mm_log.warning("Function '%s' of metaclass shadowed by '%s'", name, type(self).__name__)
+                    self.__log.warning("Function '%s' of metaclass shadowed by '%s'", name, type(self).__name__)
                 else:
-                    self.__mm_mappings.append(name)
-                    setattr(self, name, getattr(self.__mm_meta, name))
+                    self.__mappings.append(name)
+                    setattr(self, name, getattr(self.__meta, name))
                     
-        self.__mm_log.info("Server module connected and ready for use")
+        self.__log.info("Server module connected and ready for use")
         return True
         
     def disconnect(self):
-        self.__mm_version = None
-        self.__mm_prx = None
-        self.__mm_meta = None
+        self.__version = None
+        self.__prx = None
+        self.__meta = None
         
-        if self.__mm_mappings: self.__mm_log.debug("Undoing mapping")
-        for m in self.__mm_mappings:
+        if self.__mappings: self.__log.debug("Undoing mapping")
+        for m in self.__mappings:
             delattr(self, m)
-        self.__mm_mappings = []
+        self.__mappings = []
             
-        if self.__mm_ice:
-            self.__mm_log.debug("Disconnecting")
+        if self.__ice:
+            self.__log.debug("Disconnecting")
             try:
-                self.__mm_ice.destroy()
+                self.__ice.destroy()
             except Exception, e:
-                self.__mm_log.exception(e)
+                self.__log.exception(e)
             
-            self.__mm_ice = None
-            self.__mm_log.info("Disconnected")
+            self.__ice = None
+            self.__log.info("Disconnected")
             
     def __del__(self):
         self.disconnect()
