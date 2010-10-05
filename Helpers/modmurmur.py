@@ -61,7 +61,7 @@ class MurmurServer(object):
         
     def connect(self, host = "127.0.0.1", port = 6502, secret = None, prxstr = None):
         if self.__ice:
-            self.__log.warning("Connection attempt while already connected, disconnect first")
+            self.__log.warning("Connection attempt with tainted object, disconnect first")
             return True
         
         if not prxstr:
@@ -79,7 +79,7 @@ class MurmurServer(object):
         self.__ice = ice
 
         if secret:
-            __ice.getImplicitContext().put("secret", secret)
+            ice.getImplicitContext().put("secret", secret)
             
         prx = ice.stringToProxy(prxstr)
         self.__prx = prx
@@ -175,7 +175,16 @@ class MurmurServer(object):
                 return False
         
         # Get the meta object for the server
-        self.__meta = self.Murmur.MetaPrx.uncheckedCast(self.__prx)
+        try:
+            self.__meta = self.Murmur.MetaPrx.checkedCast(self.__prx)
+            self.__meta.getServer(0) # Triggers an invalid secret exception if secret is invalid
+        except self.Murmur.InvalidSecretException:
+            self.__log.critical("Invalid secret")
+            return False
+        except Exception, e:
+            self.__log.critical("Could not cast meta object, connecting failed")
+            self.__log.exception(e)
+            return False
         
         self.__log.debug("Map meta into self")
         for name in dir(self.__meta):
