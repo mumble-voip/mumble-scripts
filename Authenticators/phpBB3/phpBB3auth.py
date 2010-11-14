@@ -744,9 +744,9 @@ def _hash_crypt_private(password, settings, itoa64):
     if len(salt) != 8:
         return output
     
-    hash = md5(salt + password).digest()
+    hash = md5(unicode(salt + password).encode('utf8')).digest()
     while True:
-        hash = md5(hash + password).digest()
+        hash = md5(unicode(hash + password).encode('utf8')).digest()
         count = count - 1
         if count <= 0:
             break
@@ -765,7 +765,7 @@ def phpbb_check_hash(password, hash):
     if len(hash) == 34:
         return _hash_crypt_private(password, hash, itoa64) == hash
 
-    return md5(password).hexdigest() == hash
+    return md5(unicode(password).encode('utf8')).hexdigest() == hash
 
 #
 #--- Start of program

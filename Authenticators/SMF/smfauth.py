@@ -750,7 +750,7 @@ def smf_check_hash(password, hash, username):
     """
     Python implementation of the smf check hash function
     """
-    return sha1(username.lower() + password).hexdigest() == hash
+    return sha1(unicode(username.lower() + password).encode('utf8')).hexdigest() == hash
 
 #
 #--- Start of program
