@@ -55,6 +55,7 @@ from logging import (debug,
                      error,
                      critical)
 import logging
+from select import select
 
 def fpack(pack):
     return str(type(pack)) + "\n" + str(pack)
@@ -84,7 +85,8 @@ mtypes =   [mprot.Version,
 
 class Keepalive(Thread):
     def __init__(self, shandler, intervall = 5):
-        Thread.__init__(self)
+        Thread.__init__(self, name = "Keepalive")
+        self.daemon = True
         self._intervall = intervall
         self._shandler = shandler
         self.running = True
@@ -98,33 +100,6 @@ class Keepalive(Thread):
             else:
                 cnt = cnt + 0.5
             sleep(0.5)
-
-class Sender(Thread):
-    def __init__(self, sock, qin = None):
-        Thread.__init__(self)
-        self._log = logging.getLogger('Sender')
-        self._sock = sock or Queue()
-        self._qin = qin
-        self.running = True
-    
-    def run(self):
-        log = self._log
-        while self.running:
-            try:
-                self._sock.send(self._qin.get(True, 1))
-            except Empty:
-                pass
-            except Exception, e:
-                log.exception(e)
-                
-    def sendPacket(self, packet):
-        self._log.debug(fpack(packet))
-        spacket = packet.SerializeToString()
-        pre = struct.pack('>Hi', mtypes.index(type(packet)), len(spacket))
-        self._qin.put(pre + spacket)
-    
-    def sendRaw(self, raw):
-        self._qin.put(raw)
 
 class ServerHandler(Thread):
     def onVersion(self, packet):
@@ -238,8 +213,9 @@ class ServerHandler(Thread):
                 onPermissionQuery,
                 onCodecVersion]
     
-    def __init__(self, addr, release = '', os = '', os_version = '', version = (1,2,0)):
+    def __init__(self, addr, release = '', os = '', os_version = '', version = (1,2,0), log = None):
         Thread.__init__(self)
+        self._log = log or logging.getLogger('ServerHandler')
         self._addr = addr
         self.running = True
         self._os = os
@@ -279,10 +255,15 @@ class ServerHandler(Thread):
         self.sendPacket(mpp)
         
     def sendPacket(self, packet):
-        self.Sender.sendPacket(packet)
+        self._log.debug(fpack(packet))
+        spacket = packet.SerializeToString()
+        pre = struct.pack('>Hi', mtypes.index(type(packet)), len(spacket))
+        self._out.put(pre + spacket)
+    
+    def sendRaw(self, raw):
+        self._out.put(raw)
         
     def run(self):
-        self._log = logging.getLogger('ServerHandler')
         log = self._log
         self._channels = {}
         self._users = {}
@@ -292,32 +273,46 @@ class ServerHandler(Thread):
         ssl_sock = ssl.wrap_socket(s,
                                    ssl_version=ssl.PROTOCOL_TLSv1,
                                    cert_reqs=ssl.CERT_NONE)
-        tx = Sender(ssl_sock, self._out)
         ssl_sock.connect(self._addr)
         s.settimeout(1)
-        self.Sender = tx
-        tx.start()
         self.sendVersion(self._release, self._os, self._os_version, self._version)
         ka = Keepalive(self)
         ka.start()
         self.ready = True
-        while self.running:
-            try:
-                if not self.dispatch():
+        try:
+            while self.running:
+                r, w, x = select([ssl_sock.fileno()],
+                                 [] if self._out.empty() else [ssl_sock] ,
+                                 [ssl_sock],
+                                 0.5)
+                if x:
+                    self._log.error("Socket reported exceptional condition")
+                    self.running = False
+                    
+                if w:
+                    # We can send something
+                    try:
+                        buf = self._out.get_nowait()
+                        ssl_sock.send(buf)
+                    except Empty: # Queue got drained since select
+                        pass
+                    
+                if r:
+                    # We can receive something
                     self._buffer = self._buffer + ssl_sock.recv()
-            except ssl.SSLError, e:
-                # Stupid workaround, todo: use select
-                if str(e) != 'The read operation timed out':
-                    log.exception(e)
-                    self._running = False
-            except Exception, e:
-                log.exception(e)
-                self.running = False
-        self.ready = False
-        ka.running = False
-        tx.running = False
-        ka.join()
-        tx.join()
+                    while self.dispatch(): pass
+                        
+
+
+        except Exception, e:
+            log.exception(e)
+            self.running = False
+        finally:
+            self.ready = False
+            ka.running = False
+            ka.join(timeout = 2)
+            ssl_sock.close()
+            s.close()
 
     fmtsize = struct.calcsize('>Hi')
     
