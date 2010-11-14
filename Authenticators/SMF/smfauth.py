@@ -43,17 +43,18 @@
 import sys
 import Ice
 import thread
-import logging
 import urllib2
+import logging
 import ConfigParser
 
+from threading  import Timer
+from optparse   import OptionParser
 from logging    import (debug,
                         info,
                         warning,
                         error,
                         critical,
                         getLogger)
-from optparse   import OptionParser
 
 try:
     from hashlib import sha1
@@ -87,7 +88,8 @@ default = {'database':(('lib', str, 'MySQLdb'),
             'ice':(('host', str, '127.0.0.1'),
                    ('port', int, 6502),
                    ('slice', str, 'Murmur.ice'),
-                   ('secret', str, '')),
+                   ('secret', str, ''),
+                   ('watchdog', int, 30)),
                    
             'iceraw':None,
                    
@@ -102,7 +104,7 @@ default = {'database':(('lib', str, 'MySQLdb'),
                    ('file', str, 'smfauth.log'))}
  
 #
-#--- Helpers
+#--- Helper classes
 #
 class config(object):
     """
@@ -129,7 +131,7 @@ class config(object):
                         self.__dict__[h].__dict__[name] = conv(cfg.get(h, name))
                     except (ValueError, ConfigParser.NoSectionError, ConfigParser.NoOptionError):
                         self.__dict__[h].__dict__[name] = vdefault
-
+                    
 def entity_decode(string):
     """
     Python reverse implementation of php htmlspecialchars
@@ -194,6 +196,14 @@ class threadDB(object):
     cursor = classmethod(cursor)
     
     def execute(cls, *args, **kwargs):
+        if "threadDB__retry_execution__" in kwargs:
+            # Have a magic keyword so we can call ourselves while preventing
+            # an infinite loop
+            del kwargs["threadDB__retry_execution__"]
+            retry = False
+        else:
+            retry = True
+        
         c = cls.cursor()
         try:
             c.execute(*args, **kwargs)
@@ -201,7 +211,14 @@ class threadDB(object):
             error('Database operational error %d: %s', e.args[0], e.args[1])
             c.close()
             cls.invalidate_connection()
-            raise threadDbException()
+            if retry:
+                # Make sure we only retry once
+                info('Retrying database operation')
+                kwargs["threadDB__retry_execution__"] = True
+                c = cls.execute(*args, **kwargs)
+            else:
+                error('Database operation failed ultimately')
+                raise threadDbException()
         return c
     execute = classmethod(execute)
     
@@ -236,12 +253,17 @@ def do_main_program():
             if not self.initializeIceConnection():
                 return 1
 
+            if cfg.ice.watchdog > 0:
+                self.metaUptime = -1
+                self.checkConnection()
+                
             # Serve till we are stopped
             self.communicator().waitForShutdown()
+            self.watchdog.cancel()
             
             if self.interrupted():
                 warning('Caught interrupt, shutting down')
-            
+                
             threadDB.disconnect()
             return 0
         
@@ -251,7 +273,7 @@ def do_main_program():
             configured servers
             """
             ice = self.communicator()
-
+            
             if cfg.ice.secret:
                 debug('Using shared ice secret')
                 ice.getImplicitContext().put("secret", cfg.ice.secret)
@@ -265,33 +287,78 @@ def do_main_program():
     
             info('Connecting to Ice server (%s:%d)', cfg.ice.host, cfg.ice.port)
             base = ice.stringToProxy('Meta:tcp -h %s -p %d' % (cfg.ice.host, cfg.ice.port))
-            try:
-                meta = Murmur.MetaPrx.checkedCast(base)
-            except Ice.LocalException, e:
-                error('Could not connect to Ice server, error %d: %s', e.error, str(e).replace('\n', ' '))
-                return False
+            self.meta = Murmur.MetaPrx.uncheckedCast(base)
         
             adapter = ice.createObjectAdapterWithEndpoints('Callback.Client', 'tcp -h %s' % cfg.ice.host)
             adapter.activate()
             
+            metacbprx = adapter.addWithUUID(metaCallback(self))
+            self.metacb = Murmur.MetaCallbackPrx.uncheckedCast(metacbprx)
+            
+            authprx = adapter.addWithUUID(smfauthenticator())
+            self.auth = Murmur.ServerUpdatingAuthenticatorPrx.uncheckedCast(authprx)
+            
+            return self.attachCallbacks()
+        
+        def attachCallbacks(self):
+            """
+            Attaches all callbacks for meta and authenticators
+            """
+            
+            # Ice.ConnectionRefusedException
+            debug('Attaching callbacks')
             try:
-                authprx = adapter.addWithUUID(smfauthenticator())
-                auth = Murmur.ServerUpdatingAuthenticatorPrx.uncheckedCast(authprx)
+                info('Attaching meta callback')
+                self.meta.addCallback(self.metacb)
                 
-                for server in meta.getBootedServers():
+                for server in self.meta.getBootedServers():
                     if not cfg.murmur.servers or server.id() in cfg.murmur.servers:
-                        info('Setting authenticator for server %d', server.id())
-                        server.setAuthenticator(auth)
-            except (Murmur.InvalidSecretException, Ice.UnknownUserException), e:
-                if hasattr(e, "unknown") and e.unknown != "Murmur::InvalidSecretException":
-                    # Special handling for Murmur 1.2.2 servers with invalid slice files
+                        info('Setting authenticator for virtual server %d', server.id())
+                        server.setAuthenticator(self.auth)
+                        
+            except (Murmur.InvalidSecretException, Ice.UnknownUserException, Ice.ConnectionRefusedException), e:
+                if type(e) == Ice.ConnectionRefusedException:
+                    error('Server refused connection')
+                elif (type(e) == Murmur.InvalidSecretException) or \
+                     (type(e) == Ice.UnknownUserException and e.unknown == 'Murmur::InvalidSecretException'):
+                    error('Invalid ice secret')
+                else:
+                    # We do not actually want to handle this one, re-raise it
                     raise e
                 
-                error('Invalid ice secret')
+                self.connected = False
                 return False
-            
-            return True
 
+            self.connected = True
+            return True
+        
+        def checkConnection(self):
+            """
+            Tries to retrieve the server uptime to determine wheter the server is
+            still responsive or has restarted in the meantime
+            """
+            #debug('Watchdog run')
+            try:
+                uptime = self.meta.getUptime()
+                if self.metaUptime > 0: 
+                    # Check if the server didn't restart since we last checked, we assume
+                    # since the last time we ran this check the watchdog interval +/- 5s
+                    # have passed. This should be replaced by implementing a Keepalive in
+                    # Murmur.
+                    if not ((uptime - 5) <= (self.metaUptime + cfg.ice.watchdog) <= (uptime + 5)):
+                        # Seems like the server restarted, re-attach the callbacks
+                        self.attachCallbacks()
+                        
+                self.metaUptime = uptime
+            except Ice.Exception, e:
+                error('Connection to server lost, will try to reestablish callbacks in next watchdog run (%ds)', cfg.ice.watchdog)
+                debug(str(e))
+                self.attachCallbacks()
+
+            # Renew the timer
+            self.watchdog = Timer(cfg.ice.watchdog, self.checkConnection)
+            self.watchdog.start()
+        
     def checkSecret(func):
         """
         Decorator that checks whether the server transmitted the right secret
@@ -301,7 +368,7 @@ def do_main_program():
             return func
         
         def newfunc(*args, **kws):
-            if "current" in kws:
+            if 'current' in kws:
                 current = kws["current"]
             else:
                 current = args[-1]
@@ -313,13 +380,58 @@ def do_main_program():
             return func(*args, **kws)
         
         return newfunc
+    
+    class metaCallback(Murmur.MetaCallback):
+        def __init__(self, app):
+            Murmur.MetaCallback.__init__(self)
+            self.app = app
+        
+        @checkSecret
+        def started(self, server, current = None):
+            """
+            This function is called when a virtual server is started
+            and makes sure an authenticator gets attached if needed.
+            """
+            if not cfg.murmur.servers or server.id() in cfg.murmur.servers:
+                info('Setting authenticator for virtual server %d', server.id())
+                try:
+                    server.setAuthenticator(app.auth)
+                # Apparently this server was restarted without us noticing
+                except (Murmur.InvalidSecretException, Ice.UnknownUserException), e:
+                    if hasattr(e, "unknown") and e.unknown != "Murmur::InvalidSecretException":
+                        # Special handling for Murmur 1.2.2 servers with invalid slice files
+                        raise e
+                    
+                    error('Invalid ice secret')
+                    return
+            else:
+                debug('Virtual server %d got started', server.id())
+
+        @checkSecret
+        def stopped(self, server, current = None):
+            """
+            This function is called when a virtual server is stopped
+            """
+            if self.app.connected:
+                # Only try to output the server id if we think we are still connected to prevent
+                # flooding of our thread pool
+                try:
+                    if not cfg.murmur.servers or server.id() in cfg.murmur.servers:
+                        info('Authenticated virtual server %d got stopped', server.id())
+                    else:
+                        debug('Virtual server %d got stopped', server.id())
+                    return
+                except Ice.ConnectionRefusedException:
+                    self.app.connected = False
+            
+            debug('Server shutdown stopped a virtual server')
          
     class smfauthenticator(Murmur.ServerUpdatingAuthenticator):
         texture_cache = {}
         def __init__(self):
             Murmur.ServerUpdatingAuthenticator.__init__(self)
 
-        @checkSecret        
+        @checkSecret
         def authenticate(self, name, pw, certlist, certhash, strong, current = None):
             """
             This function is called to authenticate a user
@@ -332,7 +444,7 @@ def do_main_program():
             if name == 'SuperUser':
                 debug('Forced fall through for SuperUser')
                 return (FALL_THROUGH, None, None)
-
+            
             try:
                 sql = 'SELECT ID_MEMBER, passwd, ID_GROUP, memberName, realName, additionalGroups, is_activated FROM %smembers WHERE LOWER(memberName) = LOWER(%%s) OR realName = %%s' % cfg.database.prefix
                 cur = threadDB.execute(sql, (name, entity_encode(name)))
@@ -506,7 +618,8 @@ def do_main_program():
                 warning('Image download for "%s" (%d) failed: %s', avatar_file, id, str(e))
                 return FALL_THROUGH
             
-            self.texture_cache[avatar_file] = file            
+            self.texture_cache[avatar_file] = file
+            
             return self.texture_cache[avatar_file]
             
         @checkSecret
@@ -589,7 +702,6 @@ def do_main_program():
             # If we don't use textures from smf we let mumble save it
             debug('setTexture %d -> fall through', id)
             return FALL_THROUGH
-            
         
     class CustomLogger(Ice.Logger):
         """
@@ -599,13 +711,13 @@ def do_main_program():
         
         def __init__(self):
             Ice.Logger.__init__(self)
-            self._log = getLogger("Ice")
+            self._log = getLogger('Ice')
             
         def _print(self, message):
             self._log.info(message)
             
         def trace(self, category, message):
-            self._log.debug("Trace %s: %s", category, message)
+            self._log.debug('Trace %s: %s', category, message)
             
         def warning(self, message):
             self._log.warning(message)
@@ -621,8 +733,8 @@ def do_main_program():
     initdata.properties = Ice.createProperties([], initdata.properties)
     for prop, val in cfg.iceraw:
         initdata.properties.setProperty(prop, val)
-    
-    initdata.properties.setProperty("Ice.ImplicitContext", "Shared")
+        
+    initdata.properties.setProperty('Ice.ImplicitContext', 'Shared')
     initdata.logger = CustomLogger()
     
     app = smfauthenticatorApp()
@@ -668,7 +780,7 @@ if __name__ == '__main__':
     except Exception, e:
         print>>sys.stderr, 'Fatal error, could not load config file from "%s"' % cfgfile
         sys.exit(1)
-
+        
     try:
         db = __import__(cfg.database.lib)
     except ImportError, e:
