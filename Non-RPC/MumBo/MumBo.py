@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8
+# kate: space-indent on; indent-width 4; replace-tabs on;
 
 # Copyright (C) 2009-2010 Stefan Hacker <dd0t@users.sourceforge.net>
 # All rights reserved.
@@ -31,7 +32,7 @@
 
 #
 # mumbo.py
-# 
+#
 # MumBo is a python implement of the Mumble VoIP protocol.
 # Currently this script is able to connect to a Murmur 1.2.X server and
 # interact with it over the TCP control channel. The script currently
@@ -42,6 +43,7 @@
 # This script is WIP.
 
 import sys
+import traceback
 import Mumble_pb2 as mprot
 import socket, ssl, pprint, struct
 from threading import (Thread,
@@ -90,7 +92,7 @@ class Keepalive(Thread):
         self._intervall = intervall
         self._shandler = shandler
         self.running = True
-        
+
     def run(self):
         cnt = 0
         while self.running:
@@ -113,10 +115,10 @@ class ServerHandler(Thread):
 
     def onUDPTunnel(self, data):
         UDPVoiceCELTAlpha, UDPPing, UDPVoiceSpeex, UDPVoiceCELTBeta = range(0,4)
-        
+
         udptype = (struct.unpack('>B', data[0])[0] >> 5) & 0x7
         msgflags = struct.unpack('>B', data[0])[0] & 0x1f
-        
+
         if udptype == UDPVoiceCELTAlpha:
             self._log.log(logging.DEBUG-1, "UDPVoiceCELTAlpha packet")
         elif udptype == UDPPing:
@@ -127,8 +129,8 @@ class ServerHandler(Thread):
             self._log.log(logging.DEBUG-1, "UDPVoiceCELTBeta")
         else:
             self._log.debug("UDP tunnel packet type unknown (%d)", udptype)
-        
-        
+
+
     def onAuthenticate(self, packet):pass
     def onPing(self, packet): pass
     def onReject(self, packet): pass
@@ -137,7 +139,7 @@ class ServerHandler(Thread):
         self._log.info("Synced to server in session %d. Welcome text: %s",
                        packet.session,
                        packet.welcome_text)
-    
+
     def onChannelRemove(self, packet):
         c = self._channels
         if not c.has_key(packet.channel_id):
@@ -162,7 +164,7 @@ class ServerHandler(Thread):
         else:
             self._log.info('Remove user "%s" (%d)', u[packet.session].name, packet.session)
             del u[packet.session]
-            
+
     def onUserState(self, packet):
         u = self._users
         if packet.HasField('session'):
@@ -175,7 +177,7 @@ class ServerHandler(Thread):
                 u[packet.session].MergeFrom(packet)
 
     def onBanList(self, packet):pass
-    
+
     def onTextMessage(self, packet):
         self._log.info("Text message from %d: %s", packet.actor, packet.message)
 
@@ -189,7 +191,7 @@ class ServerHandler(Thread):
     def onVoiceTarget(self, packet):pass
     def onPermissionQuery(self, packet): pass
     def onCodecVersion(self, packet): pass
-    
+
     mhandlers = [onVersion,
                 onUDPTunnel,
                 onAuthenticate,
@@ -212,7 +214,7 @@ class ServerHandler(Thread):
                 onVoiceTarget,
                 onPermissionQuery,
                 onCodecVersion]
-    
+
     def __init__(self, addr, release = '', os = '', os_version = '', version = (1,2,0), log = None):
         Thread.__init__(self)
         self._log = log or logging.getLogger('ServerHandler')
@@ -232,37 +234,37 @@ class ServerHandler(Thread):
         mpv.os_version = os_version
         mpv.version = struct.unpack('>I', struct.pack('>HBB', *version))[0]
         self.sendPacket(mpv)
-        
+
     def sendAuthenticate(self, username, password = ''):
         mpa = mprot.Authenticate()
         mpa.username = username
         mpa.password = password
         self.sendPacket(mpa)
-        
+
     def sendTextMessage(self, message, target_users = (), target_channels = (), target_trees = ()):
         mpt = mprot.TextMessage()
-        
+
         for u in target_users: mpt.session.append(u)
         for c in target_channels: mpt.channel_id.append(c)
         for t in target_trees: mpt.tree_id.append(t)
-        
+
         mpt.message = message
         self.sendPacket(mpt)
-        
+
     def sendPing(self):
         mpp = mprot.Ping()
         mprot.resync = 0
         self.sendPacket(mpp)
-        
+
     def sendPacket(self, packet):
         self._log.debug(fpack(packet))
         spacket = packet.SerializeToString()
         pre = struct.pack('>Hi', mtypes.index(type(packet)), len(spacket))
         self._out.put(pre + spacket)
-    
+
     def sendRaw(self, raw):
         self._out.put(raw)
-        
+
     def run(self):
         log = self._log
         self._channels = {}
@@ -288,7 +290,7 @@ class ServerHandler(Thread):
                 if x:
                     self._log.error("Socket reported exceptional condition")
                     self.running = False
-                    
+
                 if w:
                     # We can send something
                     try:
@@ -296,12 +298,15 @@ class ServerHandler(Thread):
                         ssl_sock.send(buf)
                     except Empty: # Queue got drained since select
                         pass
-                    
+                    except socket.error:
+                        print "Bad things happened, shutting down"
+                        traceback.print_exc()
+                        return
                 if r:
                     # We can receive something
                     self._buffer = self._buffer + ssl_sock.recv()
                     while self.dispatch(): pass
-                        
+
 
 
         except Exception, e:
@@ -309,32 +314,34 @@ class ServerHandler(Thread):
             self.running = False
         finally:
             self.ready = False
+            print "waiting for keepalive..."
             ka.running = False
             ka.join(timeout = 2)
             ssl_sock.close()
             s.close()
+            print "bai"
 
     fmtsize = struct.calcsize('>Hi')
-    
+
     def dispatch(self):
         log = self._log
         p = self._buffer
         if len(p) < self.fmtsize:
-            #log.debug("NOT ENOUGH DATA FOR HEADER RECEIVED YET (B %d N %d)" % (len(p), self.fmtsize)) 
+            #log.debug("NOT ENOUGH DATA FOR HEADER RECEIVED YET (B %d N %d)" % (len(p), self.fmtsize))
             return False
-        
+
         msgtype, msglen = struct.unpack('>Hi', p[:self.fmtsize])
-        
+
         if msgtype < 0 or msgtype >= len(mtypes):
             log.warning('Received packet of unknown type (T %d L %d B %d)' % (msgtype, msglen, len(p)))
             self._buffer = p[msglen+self.fmtsize:]
             return True
-        
+
         log.log(logging.DEBUG-1, "HEADER: T %s (%d) L %d B %d" % (str(mtypes[msgtype]),msgtype, msglen, len(p)))
         if len(p) < (msglen + self.fmtsize):
-            log.debug("NOT ENOUGH DATA RECEIVED YET (B %d N %d)" % (len(p), msglen + self.fmtsize)) 
+            log.debug("NOT ENOUGH DATA RECEIVED YET (B %d N %d)" % (len(p), msglen + self.fmtsize))
             return False
-        
+
 
         try:
             if msgtype == mtypes.index(mprot.UDPTunnel):
@@ -362,11 +369,19 @@ if __name__ == "__main__":
     # Send a text message to the root channel
     sleep(1)
     sh.sendTextMessage("Hello World", target_trees = (0,))
-    raw_input("Press enter to close\n")
+    print("Press ^c to close")
+
+    try:
+        while True:
+            if not sh.is_alive():
+                break
+            sleep(.5)
+    except KeyboardInterrupt:
+        print "Caugt ^c, shutting down"
+
     sh.running = False
 
     sh.join()
-    
+
     info("Done")
-    
-            
+
