@@ -41,6 +41,7 @@
 #
 # This script is WIP.
 
+import sys
 import Mumble_pb2 as mprot
 import socket, ssl, pprint, struct
 from threading import (Thread,
@@ -359,7 +360,9 @@ if __name__ == "__main__":
     sh = ServerHandler(('localhost', 64738))
     info("Run")
     sh.start()
-    while not sh.ready: pass
+    while not sh.ready:
+        if not sh.is_alive():
+            sys.exit("Bernd died!")
     sh.sendAuthenticate("BerndTheBot")
     # Send a text message to the root channel
     sleep(1)
