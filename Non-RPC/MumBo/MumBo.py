@@ -43,7 +43,6 @@
 # This script is WIP.
 
 import sys
-import traceback
 import Mumble_pb2 as mprot
 import socket, ssl, pprint, struct
 from threading import (Thread,
@@ -289,7 +288,7 @@ class ServerHandler(Thread):
                                  0.5)
                 if x:
                     self._log.error("Socket reported exceptional condition")
-                    self.running = False
+                    break
 
                 if w:
                     # We can send something
@@ -298,28 +297,21 @@ class ServerHandler(Thread):
                         ssl_sock.send(buf)
                     except Empty: # Queue got drained since select
                         pass
-                    except socket.error:
-                        print "Bad things happened, shutting down"
-                        traceback.print_exc()
-                        return
+
                 if r:
                     # We can receive something
                     self._buffer = self._buffer + ssl_sock.recv()
                     while self.dispatch(): pass
-
-
-
         except Exception, e:
             log.exception(e)
-            self.running = False
+            raise
         finally:
+            self.running = False
             self.ready = False
-            print "waiting for keepalive..."
             ka.running = False
             ka.join(timeout = 2)
             ssl_sock.close()
             s.close()
-            print "bai"
 
     fmtsize = struct.calcsize('>Hi')
 
@@ -364,20 +356,23 @@ if __name__ == "__main__":
     sh.start()
     while not sh.ready:
         if not sh.is_alive():
-            sys.exit("Bernd died!")
+            error("Bernd died!")
+            sys.exit(1)
+            
     sh.sendAuthenticate("BerndTheBot")
     # Send a text message to the root channel
     sleep(1)
     sh.sendTextMessage("Hello World", target_trees = (0,))
-    print("Press ^c to close")
+    info("Press ^c to close")
 
     try:
         while True:
             if not sh.is_alive():
+                error("Bernd died!")
                 break
             sleep(.5)
     except KeyboardInterrupt:
-        print "Caugt ^c, shutting down"
+        warning("Caugt ^c, shutting down")
 
     sh.running = False
 
