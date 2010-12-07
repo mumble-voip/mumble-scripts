@@ -83,7 +83,8 @@ default = {'database':(('lib', str, 'MySQLdb'),
                        
             'user':(('id_offset', int, 1000000000),
                     ('avatar_enable', x2bool, False),
-                    ('avatar_path', str, 'http://localhost/phpBB3/download.php?avatar=')),
+                    ('avatar_path', str, 'http://localhost/phpBB3/download.php?avatar='),
+                    ('reject_on_error', x2bool, True)),
                     
             'ice':(('host', str, '127.0.0.1'),
                    ('port', int, 6502),
@@ -289,10 +290,10 @@ def do_main_program():
                         server.setAuthenticator(self.auth)
                         
             except (Murmur.InvalidSecretException, Ice.UnknownUserException, Ice.ConnectionRefusedException), e:
-                if type(e) == Ice.ConnectionRefusedException:
+                if isinstance(e, Ice.ConnectionRefusedException):
                     error('Server refused connection')
-                elif (type(e) == Murmur.InvalidSecretException) or \
-                     (type(e) == Ice.UnknownUserException and e.unknown == 'Murmur::InvalidSecretException'):
+                elif isinstance(e, Murmur.InvalidSecretException) or \
+                     isinstance(e, Ice.UnknownUserException) and (e.unknown == 'Murmur::InvalidSecretException'):
                     error('Invalid ice secret')
                 else:
                     # We do not actually want to handle this one, re-raise it
@@ -345,19 +346,49 @@ def do_main_program():
             else:
                 current = args[-1]
             
-            if 'secret' not in current.ctx or current.ctx['secret'] != cfg.ice.secret:
+            if not current or 'secret' not in current.ctx or current.ctx['secret'] != cfg.ice.secret:
                 error('Server transmitted invalid secret. Possible injection attempt.')
                 raise Murmur.InvalidSecretException()
             
             return func(*args, **kws)
         
         return newfunc
-    
+
+    def fortifyIceFu(retval = None, exceptions = (Ice.Exception,)):
+        """
+        Decorator that catches exceptions,logs them and returns a safe retval
+        value. This helps preventing the authenticator getting stuck in
+        critical code paths. Only exceptions that are instances of classes
+        given in the exceptions list are not caught.
+        
+        The default is to catch all non-Ice exceptions.
+        """
+        def newdec(func):
+            def newfunc(*args, **kws):
+                try:
+                    return func(*args, **kws)
+                except Exception, e:
+                    catch = True
+                    for ex in exceptions:
+                        if isinstance(e, ex):
+                            catch = False
+                            break
+
+                    if catch:
+                        critical('Unexpected exception caught')
+                        exception(e)
+                        return retval
+                    raise
+
+            return newfunc
+        return newdec
+                
     class metaCallback(Murmur.MetaCallback):
         def __init__(self, app):
             Murmur.MetaCallback.__init__(self)
             self.app = app
-        
+
+        @fortifyIceFu
         @checkSecret
         def started(self, server, current = None):
             """
@@ -379,6 +410,7 @@ def do_main_program():
             else:
                 debug('Virtual server %d got started', server.id())
 
+        @fortifyIceFu
         @checkSecret
         def stopped(self, server, current = None):
             """
@@ -403,6 +435,7 @@ def do_main_program():
         def __init__(self):
             Murmur.ServerUpdatingAuthenticator.__init__(self)
 
+        @fortifyIceFu((-1 if cfg.user.reject_on_error else -2, None, None))
         @checkSecret
         def authenticate(self, name, pw, certlist, certhash, strong, current = None):
             """
@@ -450,6 +483,7 @@ def do_main_program():
             info('Failed authentication attempt for user: "%s" (%d)', name, uid + cfg.user.id_offset)
             return (AUTH_REFUSED, None, None)
             
+        @fortifyIceFu((False, None))
         @checkSecret
         def getInfo(self, id, current = None):
             """
@@ -459,7 +493,8 @@ def do_main_program():
             # We do not expose any additional information so always fall through
             debug('getInfo for %d -> denied', id)
             return (False, None)
-        
+
+        @fortifyIceFu(-2)
         @checkSecret
         def nameToId(self, name, current = None):
             """
@@ -486,6 +521,7 @@ def do_main_program():
             debug('nameToId %s -> %d', name, (res[0] + cfg.user.id_offset))
             return res[0] + cfg.user.id_offset
         
+        @fortifyIceFu("")
         @checkSecret
         def idToName(self, id, current = None):
             """
@@ -518,6 +554,7 @@ def do_main_program():
             debug('idToName %d -> ?', id)
             return FALL_THROUGH
             
+        @fortifyIceFu("")
         @checkSecret
         def idToTexture(self, id, current = None):
             """
@@ -569,6 +606,7 @@ def do_main_program():
             
             return self.texture_cache[avatar_file]
             
+        @fortifyIceFu(-2)
         @checkSecret
         def registerUser(self, name, current = None):
             """
@@ -578,7 +616,8 @@ def do_main_program():
             FALL_THROUGH = -2
             debug('registerUser "%s" -> fall through', name)
             return FALL_THROUGH
-        
+
+        @fortifyIceFu(-1)
         @checkSecret
         def unregisterUser(self, id, current = None):
             """
@@ -590,7 +629,8 @@ def do_main_program():
             # but we can make murmur delete all additional information it got this way.
             debug('unregisterUser %d -> fall through', id)
             return FALL_THROUGH
-        
+
+        @fortifyIceFu({})
         @checkSecret
         def getRegisteredUsers(self, filter, current = None):
             """
@@ -615,6 +655,7 @@ def do_main_program():
             debug ('getRegisteredUsers -> %d results for filter "%s"', len(res), filter)
             return dict([(a + cfg.user.id_offset, b) for a,b in res])
         
+        @fortifyIceFu(-1)
         @checkSecret
         def setInfo(self, id, info, current = None):
             """
@@ -628,6 +669,7 @@ def do_main_program():
             debug('setInfo %d -> fall through', id)
             return FALL_THROUGH
         
+        @fortifyIceFu(-1)
         @checkSecret
         def setTexture(self, id, texture, current = None):
             """
@@ -809,6 +851,7 @@ if __name__ == '__main__':
         try:
             logfile = open(cfg.log.file, 'a')
         except IOError, e:
+            #print>>sys.stderr, str(e)
             print>>sys.stderr, 'Fatal error, could not open logfile "%s"' % cfg.log.file
             sys.exit(1)
     else:
