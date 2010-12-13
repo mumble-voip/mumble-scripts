@@ -54,7 +54,10 @@ from logging    import (debug,
                         warning,
                         error,
                         critical,
+                        exception,
                         getLogger)
+
+from xml.sax.saxutils import escape
 
 try:
     from hashlib import md5
@@ -782,32 +785,42 @@ def _hash_crypt_private(password, settings, itoa64):
     
     count = 1 << count_log2
     salt = settings[4:12]
-    
+
     if len(salt) != 8:
         return output
-    
-    hash = md5(unicode(salt + password).encode('utf8')).digest()
+
+
+    hash = md5(salt + password).digest()
+
     while True:
-        hash = md5(unicode(hash + password).encode('utf8')).digest()
+        hash = md5(hash + password).digest()
         count = count - 1
         if count <= 0:
             break
         
     output = settings[0:12]
     output += _hash_encode64(hash, 16, itoa64)
-    
+
     return output
 
 def phpbb_check_hash(password, hash):
     """
     Python implementation of the phpBB3 check hash function
     """
+
+    # phpBB3 conditions the password it got from the user before using it, replicate that
+
+    password = password.replace("\r\n", "\n")
+    password = password.replace("\r", "\n")
+    password = password.replace("\0", "")
+    password = escape(password, {'"':'&quot;'}) # emulate ENT_COMPAT
+    password = password.strip()
     
     itoa64 = './0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
     if len(hash) == 34:
         return _hash_crypt_private(password, hash, itoa64) == hash
 
-    return md5(unicode(password).encode('utf8')).hexdigest() == hash
+    return md5(password).hexdigest() == hash
 
 #
 #--- Start of program
