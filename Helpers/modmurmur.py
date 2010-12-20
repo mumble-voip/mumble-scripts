@@ -98,7 +98,7 @@ class MurmurServer(object):
         slicefile = None
         if major == 1:
             if minor <= 0:
-                # We don't support 0.X.X
+                # We don't support 1.0.X
                 critical("Server version not supported: %s", version)
                 return False
             elif minor == 1:

@@ -391,7 +391,7 @@ def do_main_program():
             Murmur.MetaCallback.__init__(self)
             self.app = app
 
-        @fortifyIceFu
+        @fortifyIceFu()
         @checkSecret
         def started(self, server, current = None):
             """
@@ -413,7 +413,7 @@ def do_main_program():
             else:
                 debug('Virtual server %d got started', server.id())
 
-        @fortifyIceFu
+        @fortifyIceFu()
         @checkSecret
         def stopped(self, server, current = None):
             """
