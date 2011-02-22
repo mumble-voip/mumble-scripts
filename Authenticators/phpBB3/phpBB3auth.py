@@ -432,13 +432,18 @@ def do_main_program():
                     self.app.connected = False
             
             debug('Server shutdown stopped a virtual server')
-         
+    
+    if cfg.user.reject_on_error: # Python 2.4 compat
+        authenticateFortifyResult = (-1, None, None)
+    else:
+        authenticateFortifyResult = (-2, None, None)
+        
     class phpBBauthenticator(Murmur.ServerUpdatingAuthenticator):
         texture_cache = {}
         def __init__(self):
             Murmur.ServerUpdatingAuthenticator.__init__(self)
 
-        @fortifyIceFu((-1 if cfg.user.reject_on_error else -2, None, None))
+        @fortifyIceFu(authenticateFortifyResult)
         @checkSecret
         def authenticate(self, name, pw, certlist, certhash, strong, current = None):
             """
