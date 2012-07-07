@@ -186,6 +186,9 @@ class threadDB(object):
                                    passwd = cfg.database.password,
                                    db = cfg.database.name,
                                    charset = 'utf8')
+                # Transactional engines like InnoDB initiate a transaction even
+                # on SELECTs-only. Thus, we auto-commit so smfauth gets recent data.
+                con.autocommit(True)
             except db.Error, e:
                 error('Could not connect to database: %s', str(e))
                 raise threadDbException()
@@ -485,8 +488,8 @@ def do_main_program():
                 return (FALL_THROUGH, None, None)
             
             try:
-                sql = 'SELECT ID_MEMBER, passwd, ID_GROUP, memberName, realName, additionalGroups, is_activated FROM %smembers WHERE LOWER(memberName) = LOWER(%%s) OR realName = %%s' % cfg.database.prefix
-                cur = threadDB.execute(sql, (name, entity_encode(name)))
+                sql = 'SELECT id_member, passwd, id_group, member_name, real_name, additional_groups, is_activated FROM %smembers WHERE LOWER(member_name) = LOWER(%%s)' % cfg.database.prefix
+                cur = threadDB.execute(sql, name)
             except threadDbException:
                 return (FALL_THROUGH, None, None)
             
@@ -496,30 +499,30 @@ def do_main_program():
                 info('Fall through for unknown user "%s"', name)
                 return (FALL_THROUGH, None, None)
     
-            uid, upw, ug, unm, urn, uag, activated = res
+            uid, upw, ugroupid, uname, urealname, uadditgroups, activated = res
             
-            if activated == 1 and smf_check_hash(pw, upw, unm):
+            if activated == 1 and smf_check_hash(pw, upw, uname):
                 # Authenticated, fetch group memberships
                 try:
-                    if uag:
-                        groups = str(ug) + ',' + uag
+                    if uadditgroups:
+                        groupids = str(ugroupid) + ',' + uadditgroups
                     else:
-                        groups = str(ug)
+                        groupids = str(ugroupid)
 
-                    sql = 'SELECT groupName FROM %smembergroups WHERE ID_GROUP IN (%s)' % (cfg.database.prefix, groups)
+                    sql = 'SELECT group_name FROM %smembergroups WHERE id_group IN (%s)' % (cfg.database.prefix, groupids)
                     cur = threadDB.execute(sql)
                 except threadDbException:
                     return (FALL_THROUGH, None, None)
-                
-                res = cur.fetchall()
+
+                groups = cur.fetchall()
                 cur.close()
-                if res:
-                    res = [a[0] for a in res]
-    
+                if groups:
+                    groups = [a[0] for a in groups]
+
                 info('User authenticated: "%s" (%d)', name, uid + cfg.user.id_offset)
-                debug('Group memberships: %s', str(res))
-                return (uid + cfg.user.id_offset, entity_decode(urn), res)
-            
+                debug('Group memberships: %s', str(groups))
+                return (uid + cfg.user.id_offset, entity_decode(urealname), groups)
+
             info('Failed authentication attempt for user: "%s" (%d)', name, uid + cfg.user.id_offset)
             return (AUTH_REFUSED, None, None)
             
@@ -547,7 +550,7 @@ def do_main_program():
                 return FALL_THROUGH
             
             try:
-                sql = 'SELECT ID_MEMBER FROM %smembers WHERE LOWER(memberName) = LOWER(%%s)' % cfg.database.prefix
+                sql = 'SELECT id_member FROM %smembers WHERE LOWER(member_name) = LOWER(%%s)' % cfg.database.prefix
                 cur = threadDB.execute(sql, name)
             except threadDbException:
                 return FALL_THROUGH
@@ -576,7 +579,7 @@ def do_main_program():
             
             # Fetch the user from the database
             try:
-                sql = 'SELECT memberName FROM %smembers WHERE ID_MEMBER = %%s' % cfg.database.prefix
+                sql = 'SELECT member_name FROM %smembers WHERE id_member = %%s' % cfg.database.prefix
                 cur = threadDB.execute(sql, bbid)
             except threadDbException:
                 return FALL_THROUGH
@@ -611,22 +614,22 @@ def do_main_program():
             # Otherwise get the users texture from smf
             bbid = id - cfg.user.id_offset
             try:
-                sql = 'SELECT realName, avatar FROM %smembers WHERE ID_MEMBER = %%s' % cfg.database.prefix
+                sql = 'SELECT avatar FROM %smembers WHERE id_member = %%s' % cfg.database.prefix
                 cur = threadDB.execute(sql, bbid)
             except threadDbException:
                 return FALL_THROUGH
-            
             res = cur.fetchone()
             cur.close()
             if not res:
                 debug('idToTexture %d -> user unknown, fall through', id)
                 return FALL_THROUGH
-            username, avatar = res
+            avatar = res[0]
             
             if not avatar:
                 # Either the user has none or it is in the attachments, check there
                 try:
-                    sql = 'SELECT ID_ATTACH, file_hash FROM %sattachments WHERE ID_MEMBER = %%s' % cfg.database.prefix
+                    sql = '''SELECT id_attach, file_hash, filename, attachment_type FROM %sattachments WHERE approved = true AND
+                        (attachment_type = 0 OR attachment_type = 1) AND id_member = %%s''' % cfg.database.prefix
                     cur = threadDB.execute(sql, bbid)
                 except threadDbException:
                     return FALL_THROUGH
@@ -638,30 +641,33 @@ def do_main_program():
                     debug('idToTexture %d -> no texture available for this user, fall through', id)
                     return FALL_THROUGH
                 
+                fid, fhash, filename, fattachtype = res
                 if cfg.forum.path.startswith('file://'):
                     # We are supposed to load this from the local fs
-                    avatar_file = cfg.forum.path + 'attachments/%d_%s' % (res[0], res[1])
-                else: 
-                    avatar_file = cfg.forum.path + 'index.php?action=dlattach;attach=%d;type=avatar' % res[0]
+                    avatar_file = cfg.forum.path + 'attachments/%d_%s' % (fid, fhash)
+                elif fattachtype == 0: 
+                    avatar_file = cfg.forum.path + 'index.php?action=dlattach;attach=%d;type=avatar' % fid
+                elif fattachtype == 1:
+                    avatar_file = cfg.forum.path + 'avatars/' + filename 
             elif "://" in avatar:
                 # ...or it is a external link
                 avatar_file = avatar
             else:
-                # Or it is saved locally in the avatar folder
-                avatar_file = cfg.forum.path + 'avatars/' + avatar
+                warning("avatar with an unexpected value, fall through")
+                return FALL_THROUGH
                 
             if avatar_file in self.texture_cache:
                 return self.texture_cache[avatar_file]
             
             try:
                 handle = urllib2.urlopen(avatar_file)
-                file = handle.read()
+                filecontent = handle.read()
                 handle.close()
             except urllib2.URLError, e:
                 warning('Image download for "%s" (%d) failed: %s', avatar_file, id, str(e))
                 return FALL_THROUGH
             
-            self.texture_cache[avatar_file] = file
+            self.texture_cache[avatar_file] = filecontent
             
             return self.texture_cache[avatar_file]
             
@@ -701,7 +707,7 @@ def do_main_program():
                 filter = '%'
             
             try:
-                sql = 'SELECT ID_MEMBER, memberName FROM %smembers WHERE is_activated = 1 AND memberName LIKE %%s' % cfg.database.prefix
+                sql = 'SELECT id_member, member_name FROM %smembers WHERE is_activated = 1 AND member_name LIKE %%s' % cfg.database.prefix
                 cur = threadDB.execute(sql, filter)
             except threadDbException:
                 return {}
@@ -754,7 +760,7 @@ def do_main_program():
     class CustomLogger(Ice.Logger):
         """
         Logger implementation to pipe Ice log messages into
-        out own log
+        our own log
         """
         
         def __init__(self):
