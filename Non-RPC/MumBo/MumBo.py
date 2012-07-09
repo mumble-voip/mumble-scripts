@@ -77,7 +77,7 @@ mtypes =   [mprot.Version,
             mprot.ACL,
             mprot.QueryUsers,
             mprot.CryptSetup,
-            mprot.ContextActionAdd,
+            mprot.ContextActionModify,
             mprot.ContextAction,
             mprot.UserList,
             mprot.VoiceTarget,
@@ -184,7 +184,7 @@ class ServerHandler(Thread):
     def onACL(self, packet):pass
     def onQueryUsers(self, packet):pass
     def onCryptSetup(self, packet):pass
-    def onContextActionAdd(self, packet):pass
+    def onContextActionModify(self, packet):pass
     def onContextAction(self, packet):pass
     def onUserList(self, packet):pass
     def onVoiceTarget(self, packet):pass
@@ -207,7 +207,7 @@ class ServerHandler(Thread):
                 onACL,
                 onQueryUsers,
                 onCryptSetup,
-                onContextActionAdd,
+                onContextActionModify,
                 onContextAction,
                 onUserList,
                 onVoiceTarget,
