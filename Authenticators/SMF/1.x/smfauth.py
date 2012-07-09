@@ -752,7 +752,7 @@ def do_main_program():
     class CustomLogger(Ice.Logger):
         """
         Logger implementation to pipe Ice log messages into
-        out own log
+        our own log
         """
         
         def __init__(self):
