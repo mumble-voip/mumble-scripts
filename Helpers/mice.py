@@ -41,12 +41,17 @@ import os
 import sys
 import tempfile
 
-# Default settings
-host = "127.0.0.1"
-port = 6502
-prxstr = "Meta:tcp -h %s -p %d -t 1000" % (host, port)
-slicefile = "Murmur.ice"
-secret = ''
+try:
+    from config import host, port, prxstr, slicefile, secret
+except ImportError:
+    print "Using default settings."
+
+    # Default settings
+    host = "127.0.0.1"
+    port = 6502
+    prxstr = "Meta:tcp -h %s -p %d -t 1000" % (host, port)
+    slicefile = "Murmur.ice"
+    secret = ''
 
 print "Import ice...",
 import Ice
