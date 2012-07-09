@@ -186,6 +186,9 @@ class threadDB(object):
                                    passwd = cfg.database.password,
                                    db = cfg.database.name,
                                    charset = 'utf8')
+
+                con.autocommit(True)
+
             except db.Error, e:
                 error('Could not connect to database: %s', str(e))
                 raise threadDbException()
