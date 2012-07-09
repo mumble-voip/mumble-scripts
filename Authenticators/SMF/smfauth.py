@@ -259,7 +259,7 @@ def do_main_program():
                 return 1
 
             if cfg.ice.watchdog > 0:
-                self.metaUptime = -1
+                self.failedWatch = True
                 self.checkConnection()
                 
             # Serve till we are stopped
@@ -305,20 +305,21 @@ def do_main_program():
             
             return self.attachCallbacks()
         
-        def attachCallbacks(self):
+        def attachCallbacks(self, quiet = False):
             """
             Attaches all callbacks for meta and authenticators
             """
             
             # Ice.ConnectionRefusedException
-            debug('Attaching callbacks')
+            #debug('Attaching callbacks')
             try:
-                info('Attaching meta callback')
+                if not quiet: info('Attaching meta callback')
+
                 self.meta.addCallback(self.metacb)
                 
                 for server in self.meta.getBootedServers():
                     if not cfg.murmur.servers or server.id() in cfg.murmur.servers:
-                        info('Setting authenticator for virtual server %d', server.id())
+                        if not quiet: info('Setting authenticator for virtual server %d', server.id())
                         server.setAuthenticator(self.auth)
                         
             except (Murmur.InvalidSecretException, Ice.UnknownUserException, Ice.ConnectionRefusedException), e:
@@ -339,26 +340,20 @@ def do_main_program():
         
         def checkConnection(self):
             """
-            Tries to retrieve the server uptime to determine wheter the server is
-            still responsive or has restarted in the meantime
+            Tries reapplies all callbacks to make sure the authenticator
+            survives server restarts and disconnects.
             """
             #debug('Watchdog run')
+
             try:
-                uptime = self.meta.getUptime()
-                if self.metaUptime > 0: 
-                    # Check if the server didn't restart since we last checked, we assume
-                    # since the last time we ran this check the watchdog interval +/- 5s
-                    # have passed. This should be replaced by implementing a Keepalive in
-                    # Murmur.
-                    if not ((uptime - 5) <= (self.metaUptime + cfg.ice.watchdog) <= (uptime + 5)):
-                        # Seems like the server restarted, re-attach the callbacks
-                        self.attachCallbacks()
-                        
-                self.metaUptime = uptime
+                if not self.attachCallbacks(quiet = not self.failedWatch):
+                    self.failedWatch = True
+                else:
+                    self.failedWatch = False
             except Ice.Exception, e:
-                error('Connection to server lost, will try to reestablish callbacks in next watchdog run (%ds)', cfg.ice.watchdog)
+                error('Failed connection check, will retry in next watchdog run (%ds)', cfg.ice.watchdog)
                 debug(str(e))
-                self.attachCallbacks()
+                self.failedWatch = True
 
             # Renew the timer
             self.watchdog = Timer(cfg.ice.watchdog, self.checkConnection)
