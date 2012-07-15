@@ -224,8 +224,10 @@ def do_main_program():
     #    without loosing the file descriptors opened by the Ice module
     slicedir = Ice.getSliceDir()
     if not slicedir:
-        slicedir = "/usr/share/slice"
-    Ice.loadSlice('', ['-I' + slicedir, cfg.ice.slice])
+        slicedir = ["-I/usr/share/Ice/slice", "-I/usr/share/slice"]
+    else:
+        slicedir = ['-I' + slicedir]
+    Ice.loadSlice('', slicedir + [cfg.ice.slice])
     import Murmur
     
     class phpBBauthenticatorApp(Ice.Application):
