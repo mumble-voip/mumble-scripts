@@ -170,7 +170,14 @@ group_attr = "uniqueMember"
 import Ice
 import sys
 import ldap
-Ice.loadSlice("", ["-I " + slice_folder, slice_folder + "/Murmur.ice"])
+
+slicedir = Ice.getSliceDir()
+if not slicedir:
+    slicedir = ["-I/usr/share/Ice/slice", "-I/usr/share/slice"]
+else:
+    slicedir = ['-I' + slice_folder]
+
+Ice.loadSlice("", slicedir + [slice_folder + "/Murmur.ice"])
 import Murmur
 
 #The authenticator against LDAP
