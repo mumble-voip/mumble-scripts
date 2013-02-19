@@ -33,8 +33,8 @@
 #    mice.py - Minimal script to interact with murmurs' ice
 #              interface, use 'python -i' or a tool like idle
 #              to run this script either directly or via 'import mice'.
-#              Be sure a Murmur.ice file is placed in the same dir and
-#              murmur is running in the default ice configuration.
+#              Configure by placing a mice_config.py in the import path.
+#              See default settings below for options.
 #
 
 import os
@@ -42,7 +42,7 @@ import sys
 import tempfile
 
 try:
-    from config import host, port, prxstr, slicefile, secret
+    from mice_config import host, port, prxstr, slicefile, secret
 except ImportError:
     print "Using default settings."
 
@@ -66,6 +66,14 @@ ice = Ice.initialize(idata)
 prx = ice.stringToProxy(prxstr)
 print "Done"
 
+slicedir = Ice.getSliceDir()
+if not slicedir:
+    # Some platforms incorrectly return None as the slice path
+    # try to work around this for the known ones.
+    slicedir = ["-I/usr/share/Ice/slice", "-I/usr/share/slice"]
+else:
+    slicedir = ['-I' + slicedir]
+
 try:
     print "Trying to retrieve slice dynamically from server...",
     slice = IcePy.Operation('getSlice', Ice.OperationMode.Idempotent, Ice.OperationMode.Idempotent, True, (), (), (), IcePy._t_string, ()).invoke(prx, ((), None))
@@ -74,7 +82,7 @@ try:
     dynslicefile = os.fdopen(dynslicefiledesc, 'w')
     dynslicefile.write(slice)
     dynslicefile.flush()
-    Ice.loadSlice('', ['-I' + Ice.getSliceDir(), dynslicefilepath])
+    Ice.loadSlice('', slicedir + [dynslicefilepath])
     dynslicefile.close()
     os.remove(dynslicefilepath)
     print "Success"
@@ -84,9 +92,9 @@ except Exception, e:
     while not os.path.exists(slicefile):
          slicefile = raw_input("Path to slicefile: ")
     print "Load slice (%s)..." % slicefile,
-    Ice.loadSlice('', ['-I' + Ice.getSliceDir(), slicefile])
+    Ice.loadSlice('', slicedir + [slicefile])
     print "Done"
-	
+
 print "Import dynamically compiled murmur class...",
 import Murmur
 print "Done"
@@ -100,40 +108,11 @@ murmur = Murmur.MetaPrx.checkedCast(prx)
 m = murmur
 print "Done"
 
-print "Creating callback stuff...",
-adapter = ice.createObjectAdapterWithEndpoints('Callback.Client', 'tcp -h %s -t 1000' % host)
-adapter.activate()
-
-class MetaCallback(Murmur.MetaCallback):
-    def __init__(self):
-        Murmur.MetaCallback.__init__(self)
-    
-    def started(self, server, current = None):
-        print "Server %d started" % server.id()
-    
-    def stopped(self, server, current = None):
-        try:
-            print "Server %d stopped" % server.id()
-        except Ice.ConnectionRefusedException:
-            print "A server got stopped, getting its ID failed. Murmur shutdown?"
-
-metaCallbackI = MetaCallback()
-metaCallbackProxy = adapter.addWithUUID(metaCallbackI)
-metaCallback = Murmur.MetaCallbackPrx.uncheckedCast(metaCallbackProxy)
-
-try:
-    murmur.addCallback(metaCallback)
-except Murmur.InvalidSecretException:
-    print "Failed (wrong secret)"
-    print "Please edit mice.py to set the valid secret"
-else:
-    print "Done"
-
 if __name__ != "__main__":
-	prefix = __name__ + "."
+    prefix = __name__ + "."
 else:
-	prefix = ""
-	
+    prefix = ""
+    
 print "Murmur object accessible via '%smurmur' or '%sm'" % (prefix,
                                                               prefix)
 
