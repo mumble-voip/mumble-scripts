@@ -126,12 +126,12 @@ def x2bool(s):
 #
 cfgfile = 'LDAPauth.ini'
 default = { 'ldap':(('ldap_uri', str, 'ldap://127.0.0.1'),
-                    ('users_dn', str, 'ou=Users,dc=example,dc=com'),
+                    ('users_dn', str, 'ou=Users,dc=example,dc=org'),
                     ('username_attr', str, 'uid'),
-                    ('number_attr', str, 'roomNumber'),
+                    ('number_attr', str, 'RoomNumber'),
                     ('display_attr', str, 'displayName'),
-                    ('group_cn', str, 'cn=mumble,ou=Groups,dc=example,dc=com'),
-                    ('group_attr', str, 'uniqueMember')),
+                    ('group_cn', str, 'ou=Groups,dc=example,dc=org'),
+                    ('group_attr', str, 'member')),
 
             'user':(('id_offset', int, 1000000000),
                     ('reject_on_error', x2bool, True)),
@@ -215,7 +215,6 @@ def do_main_program():
             if self.interrupted():
                 warning('Caught interrupt, shutting down')
                 
-            threadDB.disconnect()
             return 0
         
         def initializeIceConnection(self):
@@ -450,7 +449,7 @@ def do_main_program():
                     res = ldap_conn.search_s(cfg.ldap.group_cn, ldap.SCOPE_SUBTREE, '(%s=%s=%s,%s)' % (cfg.ldap.group_attr, cfg.ldap.username_attr, name, cfg.ldap.users_dn), [cfg.ldap.number_attr, cfg.ldap.display_attr])
                     
                     # Check if the user is a member of the group
-                    if len(res) != 1:
+                    if len(res) < 1:
                         debug('User ' + name + ' failed with no group membership')
                         return (AUTH_REFUSED, None, None)
                     
@@ -572,7 +571,7 @@ def do_main_program():
             """
             
             FALL_THROUGH = -1
-            # Return -1 to fall through to internal server database, we will not modify the phpbb3 database
+            # Return -1 to fall through to internal server database, we will not modify the LDAP directory
             # but we can make murmur delete all additional information it got this way.
             debug('unregisterUser %d -> fall through', id)
             return FALL_THROUGH
@@ -581,8 +580,8 @@ def do_main_program():
         @checkSecret
         def getRegisteredUsers(self, filter, current = None):
             """
-            Returns a list of usernames in the phpBB3 database which contain
-            filter as a substring.
+            Returns a list of usernames in the LDAP directory which contain
+            filter as a substring. Currently not implemented
             """
             FALL_THROUGH = {}
             debug('getRegisteredUsers -> fall through')
@@ -648,7 +647,7 @@ def do_main_program():
     initdata.properties.setProperty('Ice.ImplicitContext', 'Shared')
     initdata.logger = CustomLogger()
     
-    app = phpBBauthenticatorApp()
+    app = LDAPAuthenticatorApp()
     state = app.main(sys.argv[:1], initData = initdata)
     info('Shutdown complete')
 
@@ -679,13 +678,6 @@ if __name__ == '__main__':
         cfg = config(option.ini, default)
     except Exception, e:
         print>>sys.stderr, 'Fatal error, could not load config file from "%s"' % cfgfile
-        sys.exit(1)
-        
-    try:
-        db = __import__(cfg.database.lib)
-    except ImportError, e:
-        print>>sys.stderr, 'Fatal error, could not import database library "%s", '\
-        'please install the missing dependency and restart the authenticator' % cfg.database.lib
         sys.exit(1)
     
     
