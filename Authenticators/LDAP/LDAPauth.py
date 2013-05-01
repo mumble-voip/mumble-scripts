@@ -528,7 +528,7 @@ def do_main_program():
             
             ldapid = id - cfg.user.id_offset
             
-            for name, uid in self.nae_uid_cache.iteritems():
+            for name, uid in self.name_uid_cache.iteritems():
                 if uid == ldapid:
                     if name == 'SuperUser':
                         debug('idToName %d -> "SuperUser" catched', id)
