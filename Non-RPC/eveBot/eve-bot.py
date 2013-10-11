@@ -140,7 +140,7 @@ class timedWatcher(threading.Thread):
                         if len(self.plannedPackets)==0:
                             break
                     self.socketLock.release()
-            sleeptime = 10
+            sleeptime = 0.1
             if len(self.plannedPackets) > 0:
                 sleeptime = self.plannedPackets[0][0]-t
             altsleeptime=self.nextPing-t
@@ -150,7 +150,6 @@ class timedWatcher(threading.Thread):
                 time.sleep(sleeptime)
         print time.strftime("%a, %d %b %Y %H:%M:%S +0000"),self.threadName,"timed thread going away"
 
-                    
 
 class mumbleConnection(threading.Thread):
     def __init__(self,host=None,nickname=None,channel=None,mimic=False,mimicPrefix=None,mimicChannel=None,relayDelay=None,password=None,verbose=False):
@@ -187,7 +186,7 @@ class mumbleConnection(threading.Thread):
         if ((v & 0x80) == 0x00):
             return ((v & 0x7F),1)
         elif ((v & 0xC0) == 0x80):
-            return ((v & 0x4F) << 8 | ord(m[si+1]),2)
+            return ((v & 0x3F) << 8 | ord(m[si+1]),2)
         elif ((v & 0xF0) == 0xF0):
             if ((v & 0xFC) == 0xF0):
                 return (ord(m[si+1]) << 24 | ord(m[si+2]) << 16 | ord(m[si+3]) << 8 | ord(m[si+4]),5)
@@ -280,7 +279,7 @@ class mumbleConnection(threading.Thread):
 
     def setClose(self,bull):
         self.readyToClose=bull
-    
+
     def getClose(self):
         return self.readyToClose
 
@@ -327,8 +326,8 @@ class mumbleConnection(threading.Thread):
             if killChildrenImmediately:
                 self.mimicList[item]["thread"].wrapUpThread(True)
 
-        
-    
+
+
     def readPacket(self):
         self.checkThreads()
         meta=self.readTotally(6)
@@ -337,7 +336,7 @@ class mumbleConnection(threading.Thread):
             return
         msgType,length=struct.unpack(headerFormat,meta)
         stringMessage=self.readTotally(length)
-        if not stringMessage:
+        if stringMessage is None:
             self.wrapUpThread(True)
             return
         #Type 5 = ServerSync
@@ -359,7 +358,6 @@ class mumbleConnection(threading.Thread):
                 #Should mimics leave immediately if Eve is kicked?  A matter of opinion... currently they only do so upon signal or fatal error
                 self.wrapUpThread(False)
                 return
-        
         #only parse these if we are the eavesdropper
         if not self.mimic:
             #Type 8 = UserRemove (kick)
@@ -391,7 +389,7 @@ class mumbleConnection(threading.Thread):
                 if name and not channel:
                     record["channel"]=0
                 self.checkMimic(session)
-            #Type 1 = UDPTUnnel (voice data, not a real protobuffers message)                    
+            #Type 1 = UDPTUnnel (voice data, not a real protobuffers message)
             if msgType==1:
                 session,sessLen=self.decodePDSInt(stringMessage,1)
                 if session in self.mimicList:
@@ -415,7 +413,6 @@ class mumbleConnection(threading.Thread):
         except:
             print time.strftime("%a, %d %b %Y %H:%M:%S +0000"),self.threadName,"Couldn't connect to server"
             return
-        self.socket.setblocking(0)
         print time.strftime("%a, %d %b %Y %H:%M:%S +0000"),self.threadName,"connected to server"
         pbMess = Mumble_pb2.Version()
         pbMess.release="1.2.0"
@@ -451,7 +448,7 @@ class mumbleConnection(threading.Thread):
                 if len(self.plannedPackets)==0:
                     self.wrapUpThread(False)
                     break
-        
+
         if self.timedWatcher:
             self.timedWatcher.stopRunning()
 
@@ -464,7 +461,7 @@ class mumbleConnection(threading.Thread):
 
 def main():
     global eavesdropper,warning
-            
+
     p = optparse.OptionParser(description='Mumble 1.2 relaybot to relay comms from a match channel to a spectator channel, with a time delay e.g. if watching on a delayed SourceTV server. Full documentation is available at http://frymaster.127001.org/mumble',
                 prog='eve-bot.py',
                 version='%prog 1.1',
@@ -479,7 +476,7 @@ def main():
     p.add_option("-m","--mimic-prefix",help="Prefix for mimic-bots (default %default)",action="store",type="string",default="Mimic-")
     p.add_option("-v","--verbose",help="Outputs and translates all messages received from the server",action="store_true",default=False)
     p.add_option("--password",help="Password for server, if any",action="store",type="string")
-    
+
     if len(warning)>0:
         print warning
     o, arguments = p.parse_args()
@@ -501,12 +498,12 @@ def main():
     eavesdropper = mumbleConnection(host,o.nick,o.eavesdrop_in,mimicPrefix=o.mimic_prefix,mimicChannel=o.relay_to,relayDelay=o.delay,password=o.password,verbose=o.verbose)
     pp=eavesdropper.plannedPackets
     eavesdropper.start()
-    
+
     #Need to keep main thread alive to receive shutdown signal
-    
+
     while eavesdropper.isAlive():
         time.sleep(1)
-    
+
     #Edge case - if Eve is kicked and mimics are still speaking, they won't leave until they have nothing to say
     #In that case, the main thread will have already died
     notAllDead=True
