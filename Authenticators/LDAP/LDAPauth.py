@@ -126,6 +126,8 @@ def x2bool(s):
 #
 cfgfile = 'LDAPauth.ini'
 default = { 'ldap':(('ldap_uri', str, 'ldap://127.0.0.1'),
+                    ('bind_dn', str, ''),
+                    ('bind_pass', str, ''),
                     ('users_dn', str, 'ou=Users,dc=example,dc=org'),
                     ('username_attr', str, 'uid'),
                     ('number_attr', str, 'RoomNumber'),
@@ -432,7 +434,13 @@ def do_main_program():
             try:
                 #Attempt to bind to LDAP server with user-provided credentials
                 ldap_conn = ldap.initialize(cfg.ldap.ldap_uri, 0)
-                ldap_conn.bind_s("%s=%s,%s" % (cfg.ldap.username_attr, name, cfg.ldap.users_dn), pw)
+                if cfg.ldap.bind_dn:
+                    bind_dn = cfg.ldap.bind_dn
+                    bind_pass = cfg.ldap.bind_pass
+                else:
+                    bind_dn = "%s=%s,%s" % (cfg.ldap.username_attr, name, cfg.ldap.users_dn)
+                    bind_pass = pw
+                ldap_conn.bind_s(bind_dn, bind_pass)
                 res = ldap_conn.search_s(cfg.ldap.users_dn, ldap.SCOPE_SUBTREE, '(%s=%s)' % (cfg.ldap.username_attr, name), [cfg.ldap.number_attr, cfg.ldap.display_attr])
                 match = res[0] #Only interested in the first result, as there should only be one match
                 
