@@ -89,6 +89,14 @@
 # Finally, it optionally logs in the user with a separate "display_attr" name.
 # This allows user1 to log in with the USERNAME "user1" but is displayed in mumble as "User One".
 #
+# If you use the bind_dn option, the script will bind with the specified DN
+# and check for the existence of user and (optionally) the group membership
+# before it binds with the username/password.  This allows you to use a server
+# which only allows authentication by end users without any search
+# permissions.  It also allows you to set the reject_on_miss option to false
+# and let login IDs not found in LDAP fall-through to an alternate
+# authentication scheme.
+#
 #    Requirements:
 #        * python >=2.4 and the following python modules:
 #            * ice-python
@@ -136,7 +144,8 @@ default = { 'ldap':(('ldap_uri', str, 'ldap://127.0.0.1'),
                     ('group_attr', str, 'member')),
 
             'user':(('id_offset', int, 1000000000),
-                    ('reject_on_error', x2bool, True)),
+                    ('reject_on_error', x2bool, True),
+                    ('reject_on_miss', x2bool, True)),
            
             'ice':(('host', str, '127.0.0.1'),
                    ('port', int, 6502),
@@ -425,54 +434,88 @@ def do_main_program():
             FALL_THROUGH = -2
             AUTH_REFUSED = -1
             
+            # SuperUser is a special login.
             if name == 'SuperUser':
                 debug('Forced fall through for SuperUser')
                 return (FALL_THROUGH, None, None)
-            
-            #Otherwise, let's check the LDAP server
+
+            # Otherwise, let's check the LDAP server.
             uid = None
-            try:
-                #Attempt to bind to LDAP server with user-provided credentials
-                ldap_conn = ldap.initialize(cfg.ldap.ldap_uri, 0)
-                if cfg.ldap.bind_dn:
-                    bind_dn = cfg.ldap.bind_dn
-                    bind_pass = cfg.ldap.bind_pass
-                else:
-                    bind_dn = "%s=%s,%s" % (cfg.ldap.username_attr, name, cfg.ldap.users_dn)
-                    bind_pass = pw
-                ldap_conn.bind_s(bind_dn, bind_pass)
-                res = ldap_conn.search_s(cfg.ldap.users_dn, ldap.SCOPE_SUBTREE, '(%s=%s)' % (cfg.ldap.username_attr, name), [cfg.ldap.number_attr, cfg.ldap.display_attr])
-                match = res[0] #Only interested in the first result, as there should only be one match
-                
-                #Parse the user information
-                uid = int(match[1][cfg.ldap.number_attr][0])
-                displayName = match[1][cfg.ldap.display_attr][0]
-                debug('User match found, display "' + displayName + '" with UID ' + repr(uid))
-                
-                #Optionally check groups
-                if cfg.ldap.group_cn != "" :
-                    debug('Checking group membership for ' + name)
-                    
-                    #Search for user in group
-                    res = ldap_conn.search_s(cfg.ldap.group_cn, ldap.SCOPE_SUBTREE, '(%s=%s=%s,%s)' % (cfg.ldap.group_attr, cfg.ldap.username_attr, name, cfg.ldap.users_dn), [cfg.ldap.number_attr, cfg.ldap.display_attr])
-                    
-                    # Check if the user is a member of the group
-                    if len(res) < 1:
-                        debug('User ' + name + ' failed with no group membership')
-                        return (AUTH_REFUSED, None, None)
-                    
-                #Unbind and close connection
-                ldap_conn.unbind()
-                
-            #What follows below are various what-if scenarios: authentication failures and successes
-                     
-            #LDAP bind failed - expected to happen if bad login
-            except ldap.INVALID_CREDENTIALS: 
-                    warning("User " + name + " failed with wrong password")
+            ldap_conn = ldap.initialize(cfg.ldap.ldap_uri, 0)
+            if cfg.ldap.bind_dn:
+                # Bind the functional account to search the directory.
+                bind_dn = cfg.ldap.bind_dn
+                bind_pass = cfg.ldap.bind_pass
+                try:
+                    ldap_conn.bind_s(bind_dn, bind_pass)
+                except ldap.INVALID_CREDENTIALS: 
+                    ldap_conn.unbind()
+                    warning('Invalid credentials for bind_dn=' + bind_dn)
                     return (AUTH_REFUSED, None, None)
-    
-            #If we get here, the login is correct.
-            #Add the user/id combo to cache, then accept:
+            else:
+                # Prevent anonymous authentication.
+                if not pw:
+                    warning("No password supplied for user " + name)
+                    return (AUTH_REFUSED, None, None)
+            
+                # Bind the user account to search the directory.
+                bind_dn = "%s=%s,%s" % (cfg.ldap.username_attr, name, cfg.ldap.users_dn)
+                bind_pass = pw
+                try:
+                    ldap_conn.bind_s(bind_dn, bind_pass)
+                except ldap.INVALID_CREDENTIALS: 
+                    ldap_conn.unbind()
+                    warning('User ' + name + ' failed with invalid credentials')
+                    return (AUTH_REFUSED, None, None)
+
+            # Search for the user.
+            res = ldap_conn.search_s(cfg.ldap.users_dn, ldap.SCOPE_SUBTREE, '(%s=%s)' % (cfg.ldap.username_attr, name), [cfg.ldap.number_attr, cfg.ldap.display_attr])
+            if len(res) == 0:
+                warning("User " + name + " not found")
+                if cfg.user.reject_on_miss:
+                    return (AUTH_REFUSED, None, None)
+                else:
+                    return (FALL_THROUGH, None, None)
+            match = res[0] #Only interested in the first result, as there should only be one match
+                
+            # Parse the user information.
+            uid = int(match[1][cfg.ldap.number_attr][0])
+            displayName = match[1][cfg.ldap.display_attr][0]
+            debug('User match found, display "' + displayName + '" with UID ' + repr(uid))
+                
+            # Optionally check groups.
+            if cfg.ldap.group_cn != "" :
+                debug('Checking group membership for ' + name)
+                    
+                #Search for user in group
+                res = ldap_conn.search_s(cfg.ldap.group_cn, ldap.SCOPE_SUBTREE, '(%s=%s=%s,%s)' % (cfg.ldap.group_attr, cfg.ldap.username_attr, name, cfg.ldap.users_dn), [cfg.ldap.number_attr, cfg.ldap.display_attr])
+                    
+                # Check if the user is a member of the group
+                if len(res) < 1:
+                    debug('User ' + name + ' failed with no group membership')
+                    return (AUTH_REFUSED, None, None)
+                    
+            # Second bind to test user credentials if using bind_dn.
+            if cfg.ldap.bind_dn:
+                # Prevent anonymous authentication.
+                if not pw:
+                    warning("No password supplied for user " + name)
+                    return (AUTH_REFUSED, None, None)
+            
+                bind_dn = "%s=%s,%s" % (cfg.ldap.username_attr, name, cfg.ldap.users_dn)
+                bind_pass = pw
+                try:
+                    ldap_conn.bind_s(bind_dn, bind_pass)
+                except ldap.INVALID_CREDENTIALS: 
+                    ldap_conn.unbind()
+                    warning('User ' + name + ' failed with wrong password')
+                    return (AUTH_REFUSED, None, None)
+
+            # Unbind and close connection.
+            ldap_conn.unbind()
+                
+            # If we get here, the login is correct.
+            # Add the user/id combo to cache, then accept:
             self.name_uid_cache[displayName] = uid
             debug("Login accepted for " + name)
             return (uid + cfg.user.id_offset, displayName, [])
