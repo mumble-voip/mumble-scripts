@@ -449,9 +449,6 @@ def do_main_program():
                         return (AUTH_REFUSED, None, None)
                     else:
                         return (FALL_THROUGH, None, None)
-                if not pw:
-                    warning("No password supplied for user " + name)
-                    return (AUTH_REFUSED, None, None)
                 match = res[0] #Only interested in the first result, as there should only be one match
                 
                 #Parse the user information
