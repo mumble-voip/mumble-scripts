@@ -89,6 +89,14 @@
 # Finally, it optionally logs in the user with a separate "display_attr" name.
 # This allows user1 to log in with the USERNAME "user1" but is displayed in mumble as "User One".
 #
+# If you use the bind_dn option, the script will bind with the specified DN
+# and check for the existence of user and (optionally) the group membership
+# before it binds with the username/password.  This allows you to use a server
+# which only allows authentication by end users without any search
+# permissions.  It also allows you to set the reject_on_miss option to false
+# and let login IDs not found in LDAP fall-through to an alternate
+# authentication scheme.
+#
 #    Requirements:
 #        * python >=2.4 and the following python modules:
 #            * ice-python
@@ -430,7 +438,7 @@ def do_main_program():
             if name == 'SuperUser':
                 debug('Forced fall through for SuperUser')
                 return (FALL_THROUGH, None, None)
-            
+
             # Otherwise, let's check the LDAP server.
             uid = None
             ldap_conn = ldap.initialize(cfg.ldap.ldap_uri, 0)
@@ -442,9 +450,14 @@ def do_main_program():
                     ldap_conn.bind_s(bind_dn, bind_pass)
                 except ldap.INVALID_CREDENTIALS: 
                     ldap_conn.unbind()
-                    warning("Invalid credentials for bind_dn=" + bind_dn)
+                    warning('Invalid credentials for bind_dn=' + bind_dn)
                     return (AUTH_REFUSED, None, None)
             else:
+                # Prevent anonymous authentication.
+                if not pw:
+                    warning("No password supplied for user " + name)
+                    return (AUTH_REFUSED, None, None)
+            
                 # Bind the user account to search the directory.
                 bind_dn = "%s=%s,%s" % (cfg.ldap.username_attr, name, cfg.ldap.users_dn)
                 bind_pass = pw
@@ -452,7 +465,7 @@ def do_main_program():
                     ldap_conn.bind_s(bind_dn, bind_pass)
                 except ldap.INVALID_CREDENTIALS: 
                     ldap_conn.unbind()
-                    warning("User " + name + " failed with wrong password")
+                    warning('User ' + name + ' failed with invalid credentials')
                     return (AUTH_REFUSED, None, None)
 
             # Search for the user.
@@ -484,13 +497,18 @@ def do_main_program():
                     
             # Second bind to test user credentials if using bind_dn.
             if cfg.ldap.bind_dn:
+                # Prevent anonymous authentication.
+                if not pw:
+                    warning("No password supplied for user " + name)
+                    return (AUTH_REFUSED, None, None)
+            
                 bind_dn = "%s=%s,%s" % (cfg.ldap.username_attr, name, cfg.ldap.users_dn)
                 bind_pass = pw
                 try:
                     ldap_conn.bind_s(bind_dn, bind_pass)
                 except ldap.INVALID_CREDENTIALS: 
                     ldap_conn.unbind()
-                    warning("User " + name + " failed with wrong password")
+                    warning('User ' + name + ' failed with wrong password')
                     return (AUTH_REFUSED, None, None)
 
             # Unbind and close connection.
