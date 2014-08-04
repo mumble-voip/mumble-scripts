@@ -137,6 +137,7 @@ default = { 'ldap':(('ldap_uri', str, 'ldap://127.0.0.1'),
                     ('bind_dn', str, ''),
                     ('bind_pass', str, ''),
                     ('users_dn', str, 'ou=Users,dc=example,dc=org'),
+                    ('discover_dn', x2bool, True),
                     ('username_attr', str, 'uid'),
                     ('number_attr', str, 'RoomNumber'),
                     ('display_attr', str, 'displayName'),
@@ -452,6 +453,15 @@ def do_main_program():
                     ldap_conn.unbind()
                     warning('Invalid credentials for bind_dn=' + bind_dn)
                     return (AUTH_REFUSED, None, None)
+            elif cfg.ldap.discover_dn:
+                # Use anonymous bind to discover the DN
+                try:
+                    ldap_conn.bind_s()
+                except ldap.INVALID_CREDENTIALS: 
+                    ldap_conn.unbind()
+                    warning('Failed anomymous bind for discovering DN')
+                    return (AUTH_REFUSED, None, None)
+
             else:
                 # Prevent anonymous authentication.
                 if not pw:
@@ -481,6 +491,7 @@ def do_main_program():
             # Parse the user information.
             uid = int(match[1][cfg.ldap.number_attr][0])
             displayName = match[1][cfg.ldap.display_attr][0]
+            user_dn = match[0]
             debug('User match found, display "' + displayName + '" with UID ' + repr(uid))
                 
             # Optionally check groups.
@@ -488,21 +499,21 @@ def do_main_program():
                 debug('Checking group membership for ' + name)
                     
                 #Search for user in group
-                res = ldap_conn.search_s(cfg.ldap.group_cn, ldap.SCOPE_SUBTREE, '(%s=%s=%s,%s)' % (cfg.ldap.group_attr, cfg.ldap.username_attr, name, cfg.ldap.users_dn), [cfg.ldap.number_attr, cfg.ldap.display_attr])
+                res = ldap_conn.search_s(cfg.ldap.group_cn, ldap.SCOPE_SUBTREE, user_dn, [cfg.ldap.number_attr, cfg.ldap.display_attr])
                     
                 # Check if the user is a member of the group
                 if len(res) < 1:
                     debug('User ' + name + ' failed with no group membership')
                     return (AUTH_REFUSED, None, None)
                     
-            # Second bind to test user credentials if using bind_dn.
-            if cfg.ldap.bind_dn:
+            # Second bind to test user credentials if using bind_dn or discover_dn.
+            if cfg.ldap.bind_dn or cfg.ldap.discover_dn:
                 # Prevent anonymous authentication.
                 if not pw:
                     warning("No password supplied for user " + name)
                     return (AUTH_REFUSED, None, None)
             
-                bind_dn = "%s=%s,%s" % (cfg.ldap.username_attr, name, cfg.ldap.users_dn)
+                bind_dn = user_dn
                 bind_pass = pw
                 try:
                     ldap_conn.bind_s(bind_dn, bind_pass)
