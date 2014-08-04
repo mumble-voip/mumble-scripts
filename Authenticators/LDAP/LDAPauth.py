@@ -141,7 +141,9 @@ default = { 'ldap':(('ldap_uri', str, 'ldap://127.0.0.1'),
                     ('number_attr', str, 'RoomNumber'),
                     ('display_attr', str, 'displayName'),
                     ('group_cn', str, 'ou=Groups,dc=example,dc=org'),
-                    ('group_attr', str, 'member')),
+                    ('group_attr', str, 'member'),
+                    ('provide_info', x2bool, False),
+                    ('mail_attr', str, 'mail')),
 
             'user':(('id_offset', int, 1000000000),
                     ('reject_on_error', x2bool, True),
@@ -537,9 +539,40 @@ def do_main_program():
             Gets called to fetch user specific information
             """
             
-            # We do not expose any additional information so always fall through
-            debug('getInfo for %d -> denied', id)
-            return (False, None)
+            if not cfg.ldap.provide_info:
+                # We do not expose any additional information so always fall through
+                debug('getInfo for %d -> denied', id)
+                return (False, None)
+
+            ldap_conn = ldap.initialize(cfg.ldap.ldap_uri, 0)
+
+            # Bind if configured, else do explicit anonymous bind
+            if cfg.ldap.bind_dn and cfg.ldap.bind_pass:
+                ldap_conn.simple_bind_s(cfg.ldap.bind_dn, cfg.ldap.bind_pass)
+            else:
+                ldap_conn.simple_bind_s()
+
+            name = self.idToName(id)
+
+            res = ldap_conn.search_s(cfg.ldap.users_dn,
+                                    ldap.SCOPE_SUBTREE,
+                                    '(%s=%s)' % (cfg.ldap.display_attr, name),
+                                    [cfg.ldap.display_attr,
+                                     cfg.ldap.mail_attr    
+                                    ])
+            
+            #If user found, return info
+            if len(res) == 1:
+                info = {}
+
+                if cfg.ldap.mail_attr in res[0][1]:
+                    info['UserEmail'] = res[0][1][cfg.ldap.mail_attr][0]
+
+                debug('nameToId %s -> %s', name, repr(info))
+            else:
+                debug('nameToId %s -> ?', name)
+                return (False, None)
+
 
     
         @fortifyIceFu(-2)
