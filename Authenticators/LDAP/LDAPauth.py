@@ -3,6 +3,7 @@
 # Copyright (C) 2011 Benjamin Jemlich <pcgod@user.sourceforge.net>
 # Copyright (C) 2011 Nathaniel Kofalt <nkofalt@users.sourceforge.net>
 # Copyright (C) 2013 Stefan Hacker <dd0t@users.sourceforge.net>
+# Copyright (C) 2014 Dominik George <nik@naturalnet.de>
 #
 # All rights reserved.
 #
@@ -51,10 +52,8 @@
 # This is largely due to the numerous ways you can store user information in LDAP.
 # The example configuration is probably not the best way to do things; it's just a simple setup.
 #
-# Further, this script has only been tested while storing the users in a single OU.
-# Storing users in an OU tree will work, but probably will break group membership checking.
-# The group-membership code will have to be expanded if you want to use multiple OUs with groups.
-# Or if you want multiple groups allowed, etc. This is just a simple example.
+# The group-membership code will have to be expanded if you want multiple groups allowed, etc.
+# This is just a simple example.
 #
 # In this configuration, I use a really simple groupOfUniqueNames and OU of inetOrgPersons.
 # The tree already uses the "uid" attribute for usernames, so roomNumber was used to store UID.
