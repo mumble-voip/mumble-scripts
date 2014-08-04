@@ -552,7 +552,7 @@ def do_main_program():
             else:
                 ldap_conn.simple_bind_s()
 
-            name = self.idToName(id)
+            name = self.idToName(id, current)
 
             res = ldap_conn.search_s(cfg.ldap.users_dn,
                                     ldap.SCOPE_SUBTREE,
@@ -566,11 +566,12 @@ def do_main_program():
                 info = {}
 
                 if cfg.ldap.mail_attr in res[0][1]:
-                    info['UserEmail'] = res[0][1][cfg.ldap.mail_attr][0]
+                    info[Murmur.UserInfo.UserEmail] = res[0][1][cfg.ldap.mail_attr][0]
 
-                debug('nameToId %s -> %s', name, repr(info))
+                debug('getInfo %s -> %s', name, repr(info))
+                return (True, info)
             else:
-                debug('nameToId %s -> ?', name)
+                debug('getInfo %s -> ?', name)
                 return (False, None)
 
 
