@@ -143,7 +143,8 @@ default = { 'ldap':(('ldap_uri', str, 'ldap://127.0.0.1'),
                     ('group_cn', str, 'ou=Groups,dc=example,dc=org'),
                     ('group_attr', str, 'member'),
                     ('provide_info', x2bool, False),
-                    ('mail_attr', str, 'mail')),
+                    ('mail_attr', str, 'mail'),
+                    ('provide_users', x2bool, False)),
 
             'user':(('id_offset', int, 1000000000),
                     ('reject_on_error', x2bool, True),
@@ -683,11 +684,37 @@ def do_main_program():
         def getRegisteredUsers(self, filter, current = None):
             """
             Returns a list of usernames in the LDAP directory which contain
-            filter as a substring. Currently not implemented
+            filter as a substring.
             """
             FALL_THROUGH = {}
-            debug('getRegisteredUsers -> fall through')
-            return FALL_THROUGH
+
+            if not cfg.ldap.provide_users:
+                # Fall through if not configured to provide user list
+                debug('getRegisteredUsers -> fall through')
+                return FALL_THROUGH
+
+            ldap_conn = ldap.initialize(cfg.ldap.ldap_uri, 0)
+
+            # Bind if configured, else do explicit anonymous bind
+            if cfg.ldap.bind_dn and cfg.ldap.bind_pass:
+                ldap_conn.simple_bind_s(cfg.ldap.bind_dn, cfg.ldap.bind_pass)
+            else:
+                ldap_conn.simple_bind_s()
+
+            if filter:
+                res = ldap_conn.search_s(cfg.ldap.users_dn, ldap.SCOPE_SUBTREE, '(&(uid=*)(%s=*%s*))' % (cfg.ldap.display_attr, filter), [cfg.ldap.number_attr, cfg.ldap.display_attr])
+            else:
+                res = ldap_conn.search_s(cfg.ldap.users_dn, ldap.SCOPE_SUBTREE, '(uid=*)', [cfg.ldap.number_attr, cfg.ldap.display_attr])
+            
+            # Build result dict
+            users = {}
+            for dn, attrs in res:
+                if cfg.ldap.number_attr in attrs and cfg.ldap.display_attr in attrs:
+                    uid = int(attrs[cfg.ldap.number_attr][0]) + cfg.user.id_offset
+                    name = attrs[cfg.ldap.display_attr][0]
+                    users[uid] = name
+            debug('getRegisteredUsers %s -> %s', filter, repr(users))
+            return users
         
         @fortifyIceFu(-1)
         @checkSecret
