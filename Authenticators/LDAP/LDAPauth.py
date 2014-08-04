@@ -559,7 +559,14 @@ def do_main_program():
                 debug("nameToId %s (cache) -> %d", name, uid)
                 return uid
             
-            ldap_conn = ldap.initialize(cfg.ldap.ldap_uri, 0) #Anon search
+            ldap_conn = ldap.initialize(cfg.ldap.ldap_uri, 0)
+
+            # Bind if configured, else do explicit anonymous bind
+            if cfg.ldap.bind_dn and cfg.ldap.bind_pass:
+                ldap_conn.simple_bind_s(cfg.ldap.bind_dn, cfg.ldap.bind_pass)
+            else:
+                ldap_conn.simple_bind_s()
+
             res = ldap_conn.search_s(cfg.ldap.users_dn, ldap.SCOPE_SUBTREE, '(%s=%s)' % (cfg.ldap.display_attr, name), [cfg.ldap.number_attr])
             
             #If user found, return the ID
