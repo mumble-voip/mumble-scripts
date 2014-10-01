@@ -3,6 +3,7 @@
 # Copyright (C) 2011 Benjamin Jemlich <pcgod@user.sourceforge.net>
 # Copyright (C) 2011 Nathaniel Kofalt <nkofalt@users.sourceforge.net>
 # Copyright (C) 2013 Stefan Hacker <dd0t@users.sourceforge.net>
+# Copyright (C) 2014 Dominik George <nik@naturalnet.de>
 #
 # All rights reserved.
 #
@@ -51,10 +52,8 @@
 # This is largely due to the numerous ways you can store user information in LDAP.
 # The example configuration is probably not the best way to do things; it's just a simple setup.
 #
-# Further, this script has only been tested while storing the users in a single OU.
-# Storing users in an OU tree will work, but probably will break group membership checking.
-# The group-membership code will have to be expanded if you want to use multiple OUs with groups.
-# Or if you want multiple groups allowed, etc. This is just a simple example.
+# The group-membership code will have to be expanded if you want multiple groups allowed, etc.
+# This is just a simple example.
 #
 # In this configuration, I use a really simple groupOfUniqueNames and OU of inetOrgPersons.
 # The tree already uses the "uid" attribute for usernames, so roomNumber was used to store UID.
@@ -137,11 +136,15 @@ default = { 'ldap':(('ldap_uri', str, 'ldap://127.0.0.1'),
                     ('bind_dn', str, ''),
                     ('bind_pass', str, ''),
                     ('users_dn', str, 'ou=Users,dc=example,dc=org'),
+                    ('discover_dn', x2bool, True),
                     ('username_attr', str, 'uid'),
                     ('number_attr', str, 'RoomNumber'),
                     ('display_attr', str, 'displayName'),
                     ('group_cn', str, 'ou=Groups,dc=example,dc=org'),
-                    ('group_attr', str, 'member')),
+                    ('group_attr', str, 'member'),
+                    ('provide_info', x2bool, False),
+                    ('mail_attr', str, 'mail'),
+                    ('provide_users', x2bool, False)),
 
             'user':(('id_offset', int, 1000000000),
                     ('reject_on_error', x2bool, True),
@@ -452,6 +455,15 @@ def do_main_program():
                     ldap_conn.unbind()
                     warning('Invalid credentials for bind_dn=' + bind_dn)
                     return (AUTH_REFUSED, None, None)
+            elif cfg.ldap.discover_dn:
+                # Use anonymous bind to discover the DN
+                try:
+                    ldap_conn.bind_s()
+                except ldap.INVALID_CREDENTIALS: 
+                    ldap_conn.unbind()
+                    warning('Failed anomymous bind for discovering DN')
+                    return (AUTH_REFUSED, None, None)
+
             else:
                 # Prevent anonymous authentication.
                 if not pw:
@@ -481,6 +493,7 @@ def do_main_program():
             # Parse the user information.
             uid = int(match[1][cfg.ldap.number_attr][0])
             displayName = match[1][cfg.ldap.display_attr][0]
+            user_dn = match[0]
             debug('User match found, display "' + displayName + '" with UID ' + repr(uid))
                 
             # Optionally check groups.
@@ -488,21 +501,21 @@ def do_main_program():
                 debug('Checking group membership for ' + name)
                     
                 #Search for user in group
-                res = ldap_conn.search_s(cfg.ldap.group_cn, ldap.SCOPE_SUBTREE, '(%s=%s=%s,%s)' % (cfg.ldap.group_attr, cfg.ldap.username_attr, name, cfg.ldap.users_dn), [cfg.ldap.number_attr, cfg.ldap.display_attr])
+                res = ldap_conn.search_s(cfg.ldap.group_cn, ldap.SCOPE_SUBTREE, user_dn, [cfg.ldap.number_attr, cfg.ldap.display_attr])
                     
                 # Check if the user is a member of the group
                 if len(res) < 1:
                     debug('User ' + name + ' failed with no group membership')
                     return (AUTH_REFUSED, None, None)
                     
-            # Second bind to test user credentials if using bind_dn.
-            if cfg.ldap.bind_dn:
+            # Second bind to test user credentials if using bind_dn or discover_dn.
+            if cfg.ldap.bind_dn or cfg.ldap.discover_dn:
                 # Prevent anonymous authentication.
                 if not pw:
                     warning("No password supplied for user " + name)
                     return (AUTH_REFUSED, None, None)
             
-                bind_dn = "%s=%s,%s" % (cfg.ldap.username_attr, name, cfg.ldap.users_dn)
+                bind_dn = user_dn
                 bind_pass = pw
                 try:
                     ldap_conn.bind_s(bind_dn, bind_pass)
@@ -527,9 +540,41 @@ def do_main_program():
             Gets called to fetch user specific information
             """
             
-            # We do not expose any additional information so always fall through
-            debug('getInfo for %d -> denied', id)
-            return (False, None)
+            if not cfg.ldap.provide_info:
+                # We do not expose any additional information so always fall through
+                debug('getInfo for %d -> denied', id)
+                return (False, None)
+
+            ldap_conn = ldap.initialize(cfg.ldap.ldap_uri, 0)
+
+            # Bind if configured, else do explicit anonymous bind
+            if cfg.ldap.bind_dn and cfg.ldap.bind_pass:
+                ldap_conn.simple_bind_s(cfg.ldap.bind_dn, cfg.ldap.bind_pass)
+            else:
+                ldap_conn.simple_bind_s()
+
+            name = self.idToName(id, current)
+
+            res = ldap_conn.search_s(cfg.ldap.users_dn,
+                                    ldap.SCOPE_SUBTREE,
+                                    '(%s=%s)' % (cfg.ldap.display_attr, name),
+                                    [cfg.ldap.display_attr,
+                                     cfg.ldap.mail_attr    
+                                    ])
+            
+            #If user found, return info
+            if len(res) == 1:
+                info = {}
+
+                if cfg.ldap.mail_attr in res[0][1]:
+                    info[Murmur.UserInfo.UserEmail] = res[0][1][cfg.ldap.mail_attr][0]
+
+                debug('getInfo %s -> %s', name, repr(info))
+                return (True, info)
+            else:
+                debug('getInfo %s -> ?', name)
+                return (False, None)
+
 
     
         @fortifyIceFu(-2)
@@ -549,7 +594,14 @@ def do_main_program():
                 debug("nameToId %s (cache) -> %d", name, uid)
                 return uid
             
-            ldap_conn = ldap.initialize(cfg.ldap.ldap_uri, 0) #Anon search
+            ldap_conn = ldap.initialize(cfg.ldap.ldap_uri, 0)
+
+            # Bind if configured, else do explicit anonymous bind
+            if cfg.ldap.bind_dn and cfg.ldap.bind_pass:
+                ldap_conn.simple_bind_s(cfg.ldap.bind_dn, cfg.ldap.bind_pass)
+            else:
+                ldap_conn.simple_bind_s()
+
             res = ldap_conn.search_s(cfg.ldap.users_dn, ldap.SCOPE_SUBTREE, '(%s=%s)' % (cfg.ldap.display_attr, name), [cfg.ldap.number_attr])
             
             #If user found, return the ID
@@ -632,11 +684,37 @@ def do_main_program():
         def getRegisteredUsers(self, filter, current = None):
             """
             Returns a list of usernames in the LDAP directory which contain
-            filter as a substring. Currently not implemented
+            filter as a substring.
             """
             FALL_THROUGH = {}
-            debug('getRegisteredUsers -> fall through')
-            return FALL_THROUGH
+
+            if not cfg.ldap.provide_users:
+                # Fall through if not configured to provide user list
+                debug('getRegisteredUsers -> fall through')
+                return FALL_THROUGH
+
+            ldap_conn = ldap.initialize(cfg.ldap.ldap_uri, 0)
+
+            # Bind if configured, else do explicit anonymous bind
+            if cfg.ldap.bind_dn and cfg.ldap.bind_pass:
+                ldap_conn.simple_bind_s(cfg.ldap.bind_dn, cfg.ldap.bind_pass)
+            else:
+                ldap_conn.simple_bind_s()
+
+            if filter:
+                res = ldap_conn.search_s(cfg.ldap.users_dn, ldap.SCOPE_SUBTREE, '(&(uid=*)(%s=*%s*))' % (cfg.ldap.display_attr, filter), [cfg.ldap.number_attr, cfg.ldap.display_attr])
+            else:
+                res = ldap_conn.search_s(cfg.ldap.users_dn, ldap.SCOPE_SUBTREE, '(uid=*)', [cfg.ldap.number_attr, cfg.ldap.display_attr])
+            
+            # Build result dict
+            users = {}
+            for dn, attrs in res:
+                if cfg.ldap.number_attr in attrs and cfg.ldap.display_attr in attrs:
+                    uid = int(attrs[cfg.ldap.number_attr][0]) + cfg.user.id_offset
+                    name = attrs[cfg.ldap.display_attr][0]
+                    users[uid] = name
+            debug('getRegisteredUsers %s -> %s', filter, repr(users))
+            return users
         
         @fortifyIceFu(-1)
         @checkSecret
