@@ -612,7 +612,7 @@ def do_main_program():
                 debug('nameToId %s -> ?', name)
                 return FALL_THROUGH
             
-            return result
+            return uid
         
         
         @fortifyIceFu("")
