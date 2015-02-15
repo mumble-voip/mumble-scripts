@@ -501,7 +501,7 @@ def do_main_program():
                 debug('Checking group membership for ' + name)
                     
                 #Search for user in group
-                res = ldap_conn.search_s(cfg.ldap.group_cn, ldap.SCOPE_SUBTREE, user_dn, [cfg.ldap.number_attr, cfg.ldap.display_attr])
+                res = ldap_conn.search_s(cfg.ldap.group_cn, ldap.SCOPE_SUBTREE, '(%s=%s)' % (cfg.ldap.group_attr, user_dn), [cfg.ldap.number_attr, cfg.ldap.display_attr])
                     
                 # Check if the user is a member of the group
                 if len(res) < 1:
@@ -612,7 +612,7 @@ def do_main_program():
                 debug('nameToId %s -> ?', name)
                 return FALL_THROUGH
             
-            return result
+            return uid
         
         
         @fortifyIceFu("")
