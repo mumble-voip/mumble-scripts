@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8
 
-# Elkarte modification Copyright (C) 2015 Antony Derham <antony@xydre.com>
-#
-# Original work Copyright (C) 2010 Stefan Hacker <dd0t@users.sourceforge.net>
+# Copyright (C) 2010, Stefan Hacker <dd0t@users.sourceforge.net>
+# Copyright (C) 2015, Antony Derham <antony@xydre.com>
+# All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -34,8 +34,10 @@
 #    elkarteauth.py - Authenticator implementation for password authenticating
 #                 a Murmur server against a Elkarte forum database
 #
+#    Derived from smfauth.py by Stefan Hacker <dd0t@users.sourceforge.net>
+#
 #    Requirements:
-#        * python >=2.4 and the following python modules:
+#        * python >=2.5 and the following python modules:
 #            * ice-python
 #            * MySQLdb
 #            * daemon (when run as a daemon)
