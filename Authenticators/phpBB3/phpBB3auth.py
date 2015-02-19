@@ -463,7 +463,7 @@ def do_main_program():
             
             try:
                 sql = 'SELECT user_id, user_password, user_type, username FROM %susers WHERE (user_type = 0 OR user_type = 3) AND LOWER(username) = LOWER(%%s)' % cfg.database.prefix
-                cur = threadDB.execute(sql, name)
+                cur = threadDB.execute(sql, [name])
             except threadDbException:
                 return (FALL_THROUGH, None, None)
             
@@ -478,7 +478,7 @@ def do_main_program():
                 # Authenticated, fetch group memberships
                 try:
                     sql = 'SELECT group_name FROM %suser_group JOIN %sgroups USING (group_id) WHERE user_id = %%s' % (cfg.database.prefix, cfg.database.prefix)
-                    cur = threadDB.execute(sql, uid)
+                    cur = threadDB.execute(sql, [uid])
                 except threadDbException:
                     return (FALL_THROUGH, None, None)
                 
@@ -519,7 +519,7 @@ def do_main_program():
             
             try:
                 sql = 'SELECT user_id FROM %susers WHERE (user_type = 0 OR user_type = 3) AND LOWER(username) = LOWER(%%s)' % cfg.database.prefix
-                cur = threadDB.execute(sql, name)
+                cur = threadDB.execute(sql, [name])
             except threadDbException:
                 return FALL_THROUGH
             
@@ -548,7 +548,7 @@ def do_main_program():
             # Fetch the user from the database
             try:
                 sql = 'SELECT username FROM %susers WHERE (user_type = 0 OR user_type = 3) AND user_id = %%s' % cfg.database.prefix
-                cur = threadDB.execute(sql, bbid)
+                cur = threadDB.execute(sql, [bbid])
             except threadDbException:
                 return FALL_THROUGH
             
@@ -583,7 +583,7 @@ def do_main_program():
             bbid = id - cfg.user.id_offset
             try:
                 sql = 'SELECT username, user_avatar, user_avatar_type FROM %susers WHERE (user_type = 0 OR user_type = 3) AND user_id = %%s' % cfg.database.prefix
-                cur = threadDB.execute(sql, bbid)
+                cur = threadDB.execute(sql, [bbid])
             except threadDbException:
                 return FALL_THROUGH
             
@@ -654,7 +654,7 @@ def do_main_program():
             
             try:
                 sql = 'SELECT user_id, username FROM %susers WHERE (user_type = 0 OR user_type = 3) AND username LIKE %%s' % cfg.database.prefix
-                cur = threadDB.execute(sql, filter)
+                cur = threadDB.execute(sql, [filter])
             except threadDbException:
                 return {}
     

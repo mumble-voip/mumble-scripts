@@ -489,7 +489,7 @@ def do_main_program():
             
             try:
                 sql = 'SELECT id_member, passwd, id_group, member_name, real_name, additional_groups, is_activated FROM %smembers WHERE LOWER(member_name) = LOWER(%%s)' % cfg.database.prefix
-                cur = threadDB.execute(sql, name)
+                cur = threadDB.execute(sql, [name])
             except threadDbException:
                 return (FALL_THROUGH, None, None)
             
@@ -551,7 +551,7 @@ def do_main_program():
             
             try:
                 sql = 'SELECT id_member FROM %smembers WHERE LOWER(member_name) = LOWER(%%s)' % cfg.database.prefix
-                cur = threadDB.execute(sql, name)
+                cur = threadDB.execute(sql, [name])
             except threadDbException:
                 return FALL_THROUGH
             
@@ -580,7 +580,7 @@ def do_main_program():
             # Fetch the user from the database
             try:
                 sql = 'SELECT member_name FROM %smembers WHERE id_member = %%s' % cfg.database.prefix
-                cur = threadDB.execute(sql, bbid)
+                cur = threadDB.execute(sql, [bbid])
             except threadDbException:
                 return FALL_THROUGH
             
@@ -615,7 +615,7 @@ def do_main_program():
             bbid = id - cfg.user.id_offset
             try:
                 sql = 'SELECT avatar FROM %smembers WHERE id_member = %%s' % cfg.database.prefix
-                cur = threadDB.execute(sql, bbid)
+                cur = threadDB.execute(sql, [bbid])
             except threadDbException:
                 return FALL_THROUGH
             res = cur.fetchone()
@@ -630,7 +630,7 @@ def do_main_program():
                 try:
                     sql = '''SELECT id_attach, file_hash, filename, attachment_type FROM %sattachments WHERE approved = true AND
                         (attachment_type = 0 OR attachment_type = 1) AND id_member = %%s''' % cfg.database.prefix
-                    cur = threadDB.execute(sql, bbid)
+                    cur = threadDB.execute(sql, [bbid])
                 except threadDbException:
                     return FALL_THROUGH
                 
@@ -708,7 +708,7 @@ def do_main_program():
             
             try:
                 sql = 'SELECT id_member, member_name FROM %smembers WHERE is_activated = 1 AND member_name LIKE %%s' % cfg.database.prefix
-                cur = threadDB.execute(sql, filter)
+                cur = threadDB.execute(sql, [filter])
             except threadDbException:
                 return {}
     

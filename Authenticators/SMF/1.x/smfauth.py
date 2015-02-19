@@ -551,7 +551,7 @@ def do_main_program():
             
             try:
                 sql = 'SELECT ID_MEMBER FROM %smembers WHERE LOWER(memberName) = LOWER(%%s)' % cfg.database.prefix
-                cur = threadDB.execute(sql, name)
+                cur = threadDB.execute(sql, [name])
             except threadDbException:
                 return FALL_THROUGH
             
@@ -580,7 +580,7 @@ def do_main_program():
             # Fetch the user from the database
             try:
                 sql = 'SELECT memberName FROM %smembers WHERE ID_MEMBER = %%s' % cfg.database.prefix
-                cur = threadDB.execute(sql, bbid)
+                cur = threadDB.execute(sql, [bbid])
             except threadDbException:
                 return FALL_THROUGH
             
@@ -615,7 +615,7 @@ def do_main_program():
             bbid = id - cfg.user.id_offset
             try:
                 sql = 'SELECT realName, avatar FROM %smembers WHERE ID_MEMBER = %%s' % cfg.database.prefix
-                cur = threadDB.execute(sql, bbid)
+                cur = threadDB.execute(sql, [bbid])
             except threadDbException:
                 return FALL_THROUGH
             
@@ -630,7 +630,7 @@ def do_main_program():
                 # Either the user has none or it is in the attachments, check there
                 try:
                     sql = 'SELECT ID_ATTACH, file_hash FROM %sattachments WHERE ID_MEMBER = %%s' % cfg.database.prefix
-                    cur = threadDB.execute(sql, bbid)
+                    cur = threadDB.execute(sql, [bbid])
                 except threadDbException:
                     return FALL_THROUGH
                 
@@ -705,7 +705,7 @@ def do_main_program():
             
             try:
                 sql = 'SELECT ID_MEMBER, memberName FROM %smembers WHERE is_activated = 1 AND memberName LIKE %%s' % cfg.database.prefix
-                cur = threadDB.execute(sql, filter)
+                cur = threadDB.execute(sql, [filter])
             except threadDbException:
                 return {}
     
