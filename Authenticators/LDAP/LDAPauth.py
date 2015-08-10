@@ -144,7 +144,8 @@ default = { 'ldap':(('ldap_uri', str, 'ldap://127.0.0.1'),
                     ('group_attr', str, 'member'),
                     ('provide_info', x2bool, False),
                     ('mail_attr', str, 'mail'),
-                    ('provide_users', x2bool, False)),
+                    ('provide_users', x2bool, False),
+                    ('use_start_tls', x2bool, False)),
 
             'user':(('id_offset', int, 1000000000),
                     ('reject_on_error', x2bool, True),
@@ -444,12 +445,29 @@ def do_main_program():
 
             # Otherwise, let's check the LDAP server.
             uid = None
+
+            if cfg.ldap.use_start_tls:
+                # try StartTLS: global options
+                debug('use_start_tls is set, setting global option TLS_REQCERT = never')
+                ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_NEVER)
+
             ldap_conn = ldap.initialize(cfg.ldap.ldap_uri, 0)
+                # change trace (second param) to 1 instead of 0 to see more trace
+
+            if cfg.ldap.use_start_tls:
+	        # try StartTLS: connection specific options
+	        debug('use_start_tls is set, setting connection options X_TLS_*')
+	        ldap_conn.set_option(ldap.OPT_PROTOCOL_VERSION, 3)
+	        ldap_conn.set_option(ldap.OPT_X_TLS,ldap.OPT_X_TLS_DEMAND)
+	        ldap_conn.set_option(ldap.OPT_X_TLS_DEMAND, True)
+	        ldap_conn.start_tls_s()
+
             if cfg.ldap.bind_dn:
                 # Bind the functional account to search the directory.
                 bind_dn = cfg.ldap.bind_dn
                 bind_pass = cfg.ldap.bind_pass
                 try:
+                    debug('try to connect to ldap (bind_dn will be used)')
                     ldap_conn.bind_s(bind_dn, bind_pass)
                 except ldap.INVALID_CREDENTIALS: 
                     ldap_conn.unbind()
