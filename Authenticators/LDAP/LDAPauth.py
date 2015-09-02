@@ -455,12 +455,16 @@ def do_main_program():
                 # change trace (second param) to 1 instead of 0 to see more trace
 
             if cfg.ldap.use_start_tls:
-	        # try StartTLS: connection specific options
-	        debug('use_start_tls is set, setting connection options X_TLS_*')
-	        ldap_conn.set_option(ldap.OPT_PROTOCOL_VERSION, 3)
-	        ldap_conn.set_option(ldap.OPT_X_TLS,ldap.OPT_X_TLS_DEMAND)
-	        ldap_conn.set_option(ldap.OPT_X_TLS_DEMAND, True)
-	        ldap_conn.start_tls_s()
+                # try StartTLS: connection specific options
+                debug('use_start_tls is set, setting connection options X_TLS_*')
+                ldap_conn.set_option(ldap.OPT_PROTOCOL_VERSION, 3)
+                ldap_conn.set_option(ldap.OPT_X_TLS, ldap.OPT_X_TLS_DEMAND)
+                ldap_conn.set_option(ldap.OPT_X_TLS_DEMAND, True)
+                try:
+                    ldap_conn.start_tls_s()
+                except Exception, e:
+                    warning('could not initiate StartTLS, e = ' + str(e))
+                    return (AUTH_REFUSED, None, None)
 
             if cfg.ldap.bind_dn:
                 # Bind the functional account to search the directory.
