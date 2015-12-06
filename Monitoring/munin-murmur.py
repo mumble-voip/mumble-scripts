@@ -1,25 +1,24 @@
 #!/usr/bin/env python
 # -*- coding: utf-8
-# munin-murmur.py - Small "murmur stats (User/Bans/Uptime/Channels)" script for munin.
-# Copyright (c) 2010, Natenom / Natenom@googlemail.com
-# Version: 0.0.1
-# 2010-02-09
-# 
+#
+# munin-murmur.py
+# Copyright (c) 2010 - 2015, Natenom / natenom@natenom.com
+#
 # All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
 # are met:
-# 
-#    * Redistributions of source code must retain the above copyright
-#      notice, this list of conditions and the following disclaimer.
-#    * Redistributions in binary form must reproduce the above
-#      copyright notice, this list of conditions and the following
-#      disclaimer in the documentation and/or other materials provided
-#      with the distribution.
-#    * Neither the name of the developer nor the names of its
-#      contributors may be used to endorse or promote products derived
-#      from this software without specific prior written permission.
+#
+# * Redistributions of source code must retain the above copyright
+# notice, this list of conditions and the following disclaimer.
+# * Redistributions in binary form must reproduce the above
+# copyright notice, this list of conditions and the following
+# disclaimer in the documentation and/or other materials provided
+# with the distribution.
+# * Neither the name of the developer nor the names of its
+# contributors may be used to endorse or promote products derived
+# from this software without specific prior written permission.
 #
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
 # "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
@@ -32,11 +31,28 @@
 # CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
 # LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
 # ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-# POSSIBILITY OF SUCH DAMAGE.  
+# POSSIBILITY OF SUCH DAMAGE. 
 
+# Settings for what to show:
+show_users_all = True # All users regardless their state
+
+show_users_muted = True # Server muted, self muted and server suppressed users.
+
+show_users_unregistered = True # Not registered users.
+
+show_users_registered = True # Registered users.
+
+show_ban_count = True # Number of bans on the server; temporary global bans do not count.
+
+show_channel_count = True # Number of channels on the server (including the root channel).
+
+show_uptime = True # Uptime of the server (in days)
 
 #Path to Murmur.ice
-iceslice='/usr/share/slice/Murmur.ice'
+iceslice = "/usr/share/Ice/slice/Murmur.ice"
+
+#Includepath for Ice, this is default for Debian
+iceincludepath = "/usr/share/Ice/slice"
 
 #Murmur-Port (not needed to work, only for display purposes)
 serverport=64738
@@ -44,27 +60,118 @@ serverport=64738
 #Port where ice listen
 iceport=6502
 
+#Ice Password to get read access.
+#If there is no such var in your murmur.ini, this can have any value.
+#You can use the values of icesecret, icesecretread or icesecretwrite in your murmur.ini
+icesecret="secureme"
 
+#MessageSizeMax; increase this value, if you get a MemoryLimitException.
+# Also check this value in murmur.ini of your Mumble-Server.
+# This value is being interpreted in kibiBytes.
+messagesizemax="65535"
+
+####################################################################
+##### DO NOT TOUCH BELOW THIS LINE UNLESS YOU KNOW WHAT YOU DO #####
+####################################################################
 import Ice, sys
-Ice.loadSlice('', ['-I' + Ice.getSliceDir(), iceslice])
-ice = Ice.initialize()
+Ice.loadSlice("--all -I%s %s" % (iceincludepath, iceslice))
+
+props = Ice.createProperties([])
+props.setProperty("Ice.MessageSizeMax", str(messagesizemax))
+props.setProperty("Ice.ImplicitContext", "Shared")
+id = Ice.InitializationData()
+id.properties = props
+
+ice = Ice.initialize(id)
+ice.getImplicitContext().put("secret", icesecret)
+
 import Murmur
 
 if (sys.argv[1:]):
   if (sys.argv[1] == "config"):
     print 'graph_title Murmur (Port %s)' % (serverport)
     print 'graph_vlabel Count'
-    print 'users.label Users'
-    print 'uptime.label Uptime in days'
-    print 'chancount.label Channelcount/10'
-    print 'bancount.label Bans on server'
+    print 'graph_category mumble'
+
+    if show_users_all:
+      print 'usersall.label Users (All)'
+
+    if show_users_muted:
+      print 'usersmuted.label Users (Muted)'
+
+    if show_users_unregistered:
+      print 'usersunregistered.label Users (Not registered)'
+
+    if show_users_registered:
+      print 'usersregistered.label Users (Registered)'
+
+    if show_ban_count:
+      print 'bancount.label Bans on server'
+
+    if show_channel_count:
+      print 'channelcount.label Channel count/10'
+
+    if show_uptime:
+      print 'uptime.label Uptime in days'
+
     sys.exit(0)
 
 meta = Murmur.MetaPrx.checkedCast(ice.stringToProxy("Meta:tcp -h 127.0.0.1 -p %s" % (iceport)))
-server=meta.getServer(1)
-print "users.value %i" % (len(server.getUsers()))
-print "uptime.value %.2f" % (float(meta.getUptime())/60/60/24)
-print "chancount.value %.1f" % (len(server.getChannels())/10)
-print "bancount.value %i" % (len(server.getBans()))
+try:
+    server=meta.getServer(1)
+except Murmur.InvalidSecretException: 
+    print 'Given icesecreatread password is wrong.'
+    ice.shutdown()
+    sys.exit(1)
+
+# Initialize
+users_all = 0
+users_muted = 0
+users_unregistered = 0
+users_registered = 0
+ban_count = 0
+channel_count = 0
+uptime = 0
+
+# Collect the data...
+onlineusers = server.getUsers()
+
+for key in onlineusers.keys():
+  if onlineusers[key].userid == -1:
+    users_unregistered += 1
+
+  if onlineusers[key].userid > 0:
+    users_registered += 1
+
+  if onlineusers[key].mute:
+    users_muted += 1
+
+  if onlineusers[key].selfMute:
+    users_muted += 1
+
+  if onlineusers[key].suppress:
+    users_muted += 1
+
+# Output the date to munin...
+if show_users_all:
+  print "usersall.value %i" % (len(onlineusers))
+
+if show_users_muted:
+  print "usersmuted.value %i" % (users_muted)
+
+if show_users_registered:
+  print "usersregistered.value %i" % (users_registered)
+
+if show_users_unregistered:
+  print "usersunregistered.value %i" % (users_unregistered)
+
+if show_ban_count:
+  print "bancount.value %i" % (len(server.getBans()))
+
+if show_channel_count:
+  print "channelcount.value %.1f" % (len(server.getChannels())/10)
+
+if show_uptime:
+  print "uptime.value %.2f" % (float(meta.getUptime())/60/60/24)
 
 ice.shutdown()
