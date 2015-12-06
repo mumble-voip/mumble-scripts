@@ -2,7 +2,7 @@
 # -*- coding: utf-8
 #
 # munin-murmur.py
-# Copyright (c) 2010 - 2015, Natenom / natenom@natenom.com
+# Copyright (c) 2010 - 2015, Natenom <natenom@natenom.com>
 #
 # All rights reserved.
 #
@@ -11,14 +11,14 @@
 # are met:
 #
 # * Redistributions of source code must retain the above copyright
-# notice, this list of conditions and the following disclaimer.
+#   notice, this list of conditions and the following disclaimer.
 # * Redistributions in binary form must reproduce the above
-# copyright notice, this list of conditions and the following
-# disclaimer in the documentation and/or other materials provided
-# with the distribution.
+#   copyright notice, this list of conditions and the following
+#   disclaimer in the documentation and/or other materials provided
+#   with the distribution.
 # * Neither the name of the developer nor the names of its
-# contributors may be used to endorse or promote products derived
-# from this software without specific prior written permission.
+#   contributors may be used to endorse or promote products derived
+#   from this software without specific prior written permission.
 #
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
 # "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
@@ -118,11 +118,11 @@ if (sys.argv[1:]):
 
 meta = Murmur.MetaPrx.checkedCast(ice.stringToProxy("Meta:tcp -h 127.0.0.1 -p %s" % (iceport)))
 try:
-    server=meta.getServer(1)
+  server=meta.getServer(1)
 except Murmur.InvalidSecretException: 
-    print 'Given icesecreatread password is wrong.'
-    ice.shutdown()
-    sys.exit(1)
+  print 'Given icesecreatread password is wrong.'
+  ice.shutdown()
+  sys.exit(1)
 
 # Initialize
 users_all = 0
