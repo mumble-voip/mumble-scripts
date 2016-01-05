@@ -2,7 +2,7 @@
 # -*- coding: utf-8
 #
 # munin-murmur.py
-# Copyright (c) 2010 - 2015, Natenom <natenom@natenom.com>
+# Copyright (c) 2010 - 2016, Natenom <natenom@natenom.com>
 #
 # All rights reserved.
 #
@@ -31,7 +31,7 @@
 # CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
 # LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
 # ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-# POSSIBILITY OF SUCH DAMAGE. 
+# POSSIBILITY OF SUCH DAMAGE.
 
 # Settings for what to show:
 show_users_all = True # All users regardless their state
@@ -51,24 +51,27 @@ show_uptime = True # Uptime of the server (in days)
 #Path to Murmur.ice
 iceslice = "/usr/share/Ice/slice/Murmur.ice"
 
-#Includepath for Ice, this is default for Debian
+# Includepath for Ice, this is default for Debian
 iceincludepath = "/usr/share/Ice/slice"
 
-#Murmur-Port (not needed to work, only for display purposes)
-serverport=64738
+# Murmur-Port (not needed to work, only for display purposes)
+serverport = 64738
 
-#Port where ice listen
-iceport=6502
+# Host of the Ice service; most probably this is 127.0.0.1
+icehost = "127.0.0.1"
 
-#Ice Password to get read access.
-#If there is no such var in your murmur.ini, this can have any value.
-#You can use the values of icesecret, icesecretread or icesecretwrite in your murmur.ini
-icesecret="secureme"
+# Port where ice listen
+iceport = 6502
 
-#MessageSizeMax; increase this value, if you get a MemoryLimitException.
+# Ice Password to get read access.
+# If there is no such var in your murmur.ini, this can have any value.
+# You can use the values of icesecret, icesecretread or icesecretwrite in your murmur.ini
+icesecret = "secureme"
+
+# MessageSizeMax; increase this value, if you get a MemoryLimitException.
 # Also check this value in murmur.ini of your Mumble-Server.
 # This value is being interpreted in kibiBytes.
-messagesizemax="65535"
+messagesizemax = "65535"
 
 ####################################################################
 ##### DO NOT TOUCH BELOW THIS LINE UNLESS YOU KNOW WHAT YOU DO #####
@@ -79,6 +82,7 @@ Ice.loadSlice("--all -I%s %s" % (iceincludepath, iceslice))
 props = Ice.createProperties([])
 props.setProperty("Ice.MessageSizeMax", str(messagesizemax))
 props.setProperty("Ice.ImplicitContext", "Shared")
+props.setProperty("Ice.Default.EncodingVersion", "1.0")
 id = Ice.InitializationData()
 id.properties = props
 
@@ -116,10 +120,16 @@ if (sys.argv[1:]):
 
     sys.exit(0)
 
-meta = Murmur.MetaPrx.checkedCast(ice.stringToProxy("Meta:tcp -h 127.0.0.1 -p %s" % (iceport)))
+try:
+  meta = Murmur.MetaPrx.checkedCast(ice.stringToProxy("Meta:tcp -h %s -p %s" % (icehost, iceport)))
+except Ice.ConnectionRefusedException:
+  print 'Could not connect to Murmur via Ice. Please check '
+  ice.shutdown()
+  sys.exit(1)
+
 try:
   server=meta.getServer(1)
-except Murmur.InvalidSecretException: 
+except Murmur.InvalidSecretException:
   print 'Given icesecreatread password is wrong.'
   ice.shutdown()
   sys.exit(1)
