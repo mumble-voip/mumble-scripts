@@ -159,7 +159,8 @@ default = { 'ldap':(('ldap_uri', str, 'ldap://127.0.0.1'),
                    
             'iceraw':None,
                    
-            'murmur':(('servers', lambda x:map(int, x.split(',')), []),),
+            'murmur':(('servers', lambda x:map(int, x.split(',')), []),
+                       ("ice_version", float, 1.1)),
             'glacier':(('enabled', x2bool, False),
                        ('user', str, 'ldapauth'),
                        ('password', str, 'secret'),
@@ -251,7 +252,7 @@ def do_main_program():
                 #TODO: Implement this
     
             info('Connecting to Ice server (%s:%d)', cfg.ice.host, cfg.ice.port)
-            base = ice.stringToProxy('Meta:tcp -h %s -p %d' % (cfg.ice.host, cfg.ice.port))
+            base = ice.stringToProxy('Meta -e %.1f:tcp -h %s -p %d' % (cfg.murmur.ice_version, cfg.ice.host, cfg.ice.port))
             self.meta = Murmur.MetaPrx.uncheckedCast(base)
         
             adapter = ice.createObjectAdapterWithEndpoints('Callback.Client', 'tcp -h %s' % cfg.ice.host)
