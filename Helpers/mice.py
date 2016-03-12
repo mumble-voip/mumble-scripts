@@ -59,6 +59,7 @@ import IcePy
 
 props = Ice.createProperties(sys.argv)
 props.setProperty("Ice.ImplicitContext", "Shared")
+props.setProperty('Ice.Default.EncodingVersion', '1.0')
 idata = Ice.InitializationData()
 idata.properties = props
 
