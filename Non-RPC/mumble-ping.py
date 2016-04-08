@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 # -*- coding: utf-8
 # Based on pcgod's mumble-ping script found at http://0xy.org/mumble-ping.py.
 

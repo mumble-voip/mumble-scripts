@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 #
 #Copyright (c) 2009, Philip Cass <frymaster@127001.org>
 #Copyright (c) 2009, Alan Ainsworth <fruitbat@127001.org>
