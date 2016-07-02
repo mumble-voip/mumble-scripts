@@ -153,13 +153,9 @@ for key in onlineusers.keys():
   if onlineusers[key].userid > 0:
     users_registered += 1
 
-  if onlineusers[key].mute:
-    users_muted += 1
-
-  if onlineusers[key].selfMute:
-    users_muted += 1
-
-  if onlineusers[key].suppress:
+  if onlineusers[key].mute \
+      or onlineusers[key].selfMute \
+      or onlineusers[key].suppress:
     users_muted += 1
 
 # Output the date to munin...
