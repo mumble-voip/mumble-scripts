@@ -140,7 +140,7 @@ default = { 'ldap':(('ldap_uri', str, 'ldap://127.0.0.1'),
                     ('username_attr', str, 'uid'),
                     ('number_attr', str, 'RoomNumber'),
                     ('display_attr', str, 'displayName'),
-                    ('group_cn', str, 'ou=Groups,dc=example,dc=org'),
+                    ('group_dn', str, 'ou=Groups,dc=example,dc=org'),
                     ('group_attr', str, 'member'),
                     ('provide_info', x2bool, False),
                     ('mail_attr', str, 'mail'),
@@ -519,11 +519,11 @@ def do_main_program():
             debug('User match found, display "' + displayName + '" with UID ' + repr(uid))
                 
             # Optionally check groups.
-            if cfg.ldap.group_cn != "" :
+            if cfg.ldap.group_dn != "" :
                 debug('Checking group membership for ' + name)
                     
                 #Search for user in group
-                res = ldap_conn.search_s(cfg.ldap.group_cn, ldap.SCOPE_SUBTREE, '(%s=%s)' % (cfg.ldap.group_attr, user_dn), [cfg.ldap.number_attr, cfg.ldap.display_attr])
+                res = ldap_conn.search_s(cfg.ldap.group_dn, ldap.SCOPE_SUBTREE, '(%s=%s)' % (cfg.ldap.group_attr, user_dn), [cfg.ldap.number_attr, cfg.ldap.display_attr])
                     
                 # Check if the user is a member of the group
                 if len(res) < 1:
