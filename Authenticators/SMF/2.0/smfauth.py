@@ -46,6 +46,7 @@ import thread
 import urllib2
 import logging
 import ConfigParser
+import bcrypt
 
 from threading  import Timer
 from optparse   import OptionParser
@@ -805,7 +806,17 @@ def smf_check_hash(password, hash, username):
     """
     Python implementation of the smf check hash function
     """
-    return sha1(username.lower().encode('utf8') + password).hexdigest() == hash
+    ret = False
+
+    try:
+      # SMF 2.1 uses a bcrypt hash, try that first
+      ret = bcrypt.hashpw(username.lower().encode('utf-8') + password, hash.encode('utf-8')) == hash
+    except ValueError:
+      # The sha1 password hash from SMF 2.0 and earlier will cause a salt value error
+      # In that case, try the legacy sha1 hash
+      ret = sha1(username.lower().encode('utf8') + password).hexdigest() == hash
+
+    return ret
 
 #
 #--- Start of program
