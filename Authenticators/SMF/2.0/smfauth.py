@@ -814,7 +814,7 @@ def smf_check_hash(password, hash, username):
     except ValueError:
       # The sha1 password hash from SMF 2.0 and earlier will cause a salt value error
       # In that case, try the legacy sha1 hash
-      ret = sha1(username.lower().encode('utf8') + password).hexdigest() == hash
+      ret = sha1((username.lower() + password).encode('utf-8')).hexdigest() == hash
 
     return ret
 
