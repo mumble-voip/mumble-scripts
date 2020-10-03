@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8
 
 # Copyright (C) 2010 Stefan Hacker <dd0t@users.sourceforge.net>
@@ -34,7 +34,7 @@
 #                 a Murmur server against a SMF forum database
 #
 #    Requirements:
-#        * python >=2.4 and the following python modules:
+#        * python >=3.0 and the following python modules:
 #            * ice-python
 #            * MySQLdb
 #            * daemon (when run as a daemon)
