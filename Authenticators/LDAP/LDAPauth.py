@@ -102,7 +102,7 @@
 #            * ice-python
 #            * python-ldap
 #            * daemon (when run as a daemon)
-#    If you are using Ubuntu/Debian (only Ubuntu 20.04 was tested) this means the following packages:
+#    If you are using Ubuntu/Debian (only Ubuntu 20.04 was tested) the following packages provide these:
 #        * python3
 #        * python3-zeroc-ice
 #        * python3-ldap
