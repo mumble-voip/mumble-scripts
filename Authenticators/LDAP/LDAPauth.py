@@ -98,7 +98,7 @@
 # authentication scheme.
 #
 #    Requirements:
-#        * python >=3.8 (maybe 3.6 is enought but it wasn't tested) and the following python modules:
+#        * python >=3.8 (maybe 3.6 is enough but it wasn't tested) and the following python modules:
 #            * ice-python
 #            * python-ldap
 #            * daemon (when run as a daemon)
