@@ -1,12 +1,11 @@
-#!/usr/bin/env python
-# -*- coding: utf-8
+#!/usr/bin/env python3
 # Based on pcgod's mumble-ping script found at http://0xy.org/mumble-ping.py.
 
 from struct import *
 import socket, sys, time, datetime
 
 if len(sys.argv) < 3:
-	print "Usage: %s <host> <port>" % sys.argv[0]
+	print(f"Usage: {sys.argv[0]} <host> <port>")
 	sys.exit()
 
 host = sys.argv[1]
@@ -21,22 +20,22 @@ s.sendto(buf, (host, port))
 try:
 	data, addr = s.recvfrom(1024)
 except socket.timeout:
-	print "%d:NaN:NaN" % (time.time())
+	print(f"{time.time()}:NaN:NaN")
 	sys.exit()
 
-print "recvd %d bytes" % len(data)
+print(f"recvd {len(data)} bytes")
 
 r = unpack(">bbbbQiii", data)
 
 version = r[1:4]
-# r[0,1,2,3] = version
-# r[4] = ts
-# r[5] = users
-# r[6] = max users
-# r[7] = bandwidth
+ts = r[4]
+users = r[5]
+max_users = r[6]
+bandwidth = r[7]
 
 ping = (datetime.datetime.now().microsecond - r[4]) / 1000.0
-if ping < 0: ping = ping + 1000
+if ping < 0:
+	ping = ping + 1000
 
-print "Version %d.%d.%d, %d/%d Users, %.1fms, %dkbit/s" % (version + (r[5], r[6], ping, r[7]/1000))
+print(f"Version {'.'.join([str(v) for v in version])}, {users}/{max_users} Users, {ping:.1f}ms, {bandwidth / 1000}kbit/s")
 
