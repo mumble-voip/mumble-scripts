@@ -1,16 +1,21 @@
-#!/usr/bin/env python
-# -*- coding: utf-8
+#!/usr/bin/env python3
 # Based on pcgod's mumble-ping script found at http://0xy.org/mumble-ping.py.
 
 from struct import *
+from string import Template
 import socket, sys, time, datetime
 
 if len(sys.argv) < 3:
-	print "Usage: %s <host> <port>" % sys.argv[0]
+	print(f"Usage: {sys.argv[0]} <host> <port> [<format>] [-v]")
 	sys.exit()
 
 host = sys.argv[1]
 port = int(sys.argv[2])
+if len(sys.argv) > 3 and sys.argv[3] != '-v':
+	fmt = sys.argv[3]
+else:
+	fmt = "Version $v, $u/$m Users, $p, $b"
+verbose = '-v' in sys.argv
 
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.settimeout(1)
@@ -21,22 +26,33 @@ s.sendto(buf, (host, port))
 try:
 	data, addr = s.recvfrom(1024)
 except socket.timeout:
-	print "%d:NaN:NaN" % (time.time())
+	print(f"{time.time()}:NaN:NaN")
 	sys.exit()
 
-print "recvd %d bytes" % len(data)
+if verbose:
+	print(f"recvd {len(data)} bytes")
 
 r = unpack(">bbbbQiii", data)
 
-version = r[1:4]
-# r[0,1,2,3] = version
-# r[4] = ts
-# r[5] = users
-# r[6] = max users
-# r[7] = bandwidth
+version = '.'.join([str(v) for v in r[1:4]])
+ts = r[4]
+users = r[5]
+max_users = r[6]
+bandwidth = f"{r[7] / 1000}kbit/s"
 
 ping = (datetime.datetime.now().microsecond - r[4]) / 1000.0
-if ping < 0: ping = ping + 1000
+if ping < 0:
+	ping = ping + 1000
+ping = f"{ping:.1f}ms"
 
-print "Version %d.%d.%d, %d/%d Users, %.1fms, %dkbit/s" % (version + (r[5], r[6], ping, r[7]/1000))
+lut = {
+	'v': version,
+	't': ts,
+	'u': users,
+	'm': max_users,
+	'p': ping,
+	'b': bandwidth,
+}
+t = Template(fmt)
+print(t.substitute(**lut))
 
