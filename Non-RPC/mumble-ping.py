@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# Based on pcgod's mumble-ping script found at http://0xy.org/mumble-ping.py.
 
 from struct import *
 from string import Template
