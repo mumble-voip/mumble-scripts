@@ -1,9 +1,10 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Copyright (C) 2011 Benjamin Jemlich <pcgod@user.sourceforge.net>
 # Copyright (C) 2011 Nathaniel Kofalt <nkofalt@users.sourceforge.net>
 # Copyright (C) 2013 Stefan Hacker <dd0t@users.sourceforge.net>
 # Copyright (C) 2014 Dominik George <nik@naturalnet.de>
+# Copyright (C) 2020 Andreas Valder <a.valder@syseleven.de>
 #
 # All rights reserved.
 #
@@ -97,18 +98,24 @@
 # authentication scheme.
 #
 #    Requirements:
-#        * python >=2.4 and the following python modules:
+#        * python >=3.8 (maybe 3.6 is enough but it wasn't tested) and the following python modules:
 #            * ice-python
 #            * python-ldap
 #            * daemon (when run as a daemon)
+#    If you are using Ubuntu/Debian (only Ubuntu 20.04 was tested) the following packages provide these:
+#        * python3
+#        * python3-zeroc-ice
+#        * python3-ldap
+#        * python3-daemon
+#        * zeroc-ice-slice
 
 import sys
 import ldap
 import Ice
-import thread
-import urllib2
+import _thread
+import urllib.request, urllib.error, urllib.parse
 import logging
-import ConfigParser
+import configparser
 
 from threading  import Timer
 from optparse   import OptionParser
@@ -124,7 +131,7 @@ def x2bool(s):
     """Helper function to convert strings from the config to bool"""
     if isinstance(s, bool):
         return s
-    elif isinstance(s, basestring):
+    elif isinstance(s, str):
         return s.lower() in ['1', 'true']
     raise ValueError()
 
@@ -161,7 +168,7 @@ default = { 'ldap':(('ldap_uri', str, 'ldap://127.0.0.1'),
                    
             'iceraw':None,
                    
-            'murmur':(('servers', lambda x:map(int, x.split(',')), []),),
+            'murmur':(('servers', lambda x:list(map(int, x.split(','))), []),),
             'glacier':(('enabled', x2bool, False),
                        ('user', str, 'ldapauth'),
                        ('password', str, 'secret'),
@@ -181,23 +188,23 @@ class config(object):
 
     def __init__(self, filename = None, default = None):
         if not filename or not default: return
-        cfg = ConfigParser.ConfigParser()
+        cfg = configparser.ConfigParser()
         cfg.optionxform = str
         cfg.read(filename)
         
-        for h,v in default.iteritems():
+        for h,v in default.items():
             if not v:
                 # Output this whole section as a list of raw key/value tuples
                 try:
                     self.__dict__[h] = cfg.items(h)
-                except ConfigParser.NoSectionError:
+                except configparser.NoSectionError:
                     self.__dict__[h] = []
             else:
                 self.__dict__[h] = config()
                 for name, conv, vdefault in v:
                     try:
                         self.__dict__[h].__dict__[name] = conv(cfg.get(h, name))
-                    except (ValueError, ConfigParser.NoSectionError, ConfigParser.NoOptionError):
+                    except (ValueError, configparser.NoSectionError, configparser.NoOptionError):
                         self.__dict__[h].__dict__[name] = vdefault
                     
 
@@ -284,7 +291,7 @@ def do_main_program():
                         if not quiet: info('Setting authenticator for virtual server %d', server.id())
                         server.setAuthenticator(self.auth)
                         
-            except (Murmur.InvalidSecretException, Ice.UnknownUserException, Ice.ConnectionRefusedException), e:
+            except (Murmur.InvalidSecretException, Ice.UnknownUserException, Ice.ConnectionRefusedException) as e:
                 if isinstance(e, Ice.ConnectionRefusedException):
                     error('Server refused connection')
                 elif isinstance(e, Murmur.InvalidSecretException) or \
@@ -312,7 +319,7 @@ def do_main_program():
                     self.failedWatch = True
                 else:
                     self.failedWatch = False
-            except Ice.Exception, e:
+            except Ice.Exception as e:
                 error('Failed connection check, will retry in next watchdog run (%ds)', cfg.ice.watchdog)
                 debug(str(e))
                 self.failedWatch = True
@@ -356,7 +363,7 @@ def do_main_program():
             def newfunc(*args, **kws):
                 try:
                     return func(*args, **kws)
-                except Exception, e:
+                except Exception as e:
                     catch = True
                     for ex in exceptions:
                         if isinstance(e, ex):
@@ -389,7 +396,7 @@ def do_main_program():
                 try:
                     server.setAuthenticator(app.auth)
                 # Apparently this server was restarted without us noticing
-                except (Murmur.InvalidSecretException, Ice.UnknownUserException), e:
+                except (Murmur.InvalidSecretException, Ice.UnknownUserException) as e:
                     if hasattr(e, "unknown") and e.unknown != "Murmur::InvalidSecretException":
                         # Special handling for Murmur 1.2.2 servers with invalid slice files
                         raise e
@@ -464,7 +471,7 @@ def do_main_program():
                 ldap_conn.set_option(ldap.OPT_X_TLS_DEMAND, True)
                 try:
                     ldap_conn.start_tls_s()
-                except Exception, e:
+                except Exception as e:
                     warning('could not initiate StartTLS, e = ' + str(e))
                     return (AUTH_REFUSED, None, None)
 
@@ -520,7 +527,7 @@ def do_main_program():
                 
             # Parse the user information.
             uid = int(match[1][cfg.ldap.number_attr][0])
-            displayName = match[1][cfg.ldap.display_attr][0]
+            displayName = match[1][cfg.ldap.display_attr][0].decode()
             user_dn = match[0]
             debug('User match found, display "' + displayName + '" with UID ' + repr(uid))
             groups = []
@@ -604,7 +611,7 @@ def do_main_program():
                 info = {}
 
                 if cfg.ldap.mail_attr in res[0][1]:
-                    info[Murmur.UserInfo.UserEmail] = res[0][1][cfg.ldap.mail_attr][0]
+                    info[Murmur.UserInfo.UserEmail] = res[0][1][cfg.ldap.mail_attr][0].decode()
 
                 debug('getInfo %s -> %s', name, repr(info))
                 return (True, info)
@@ -668,7 +675,7 @@ def do_main_program():
             
             ldapid = id - cfg.user.id_offset
             
-            for name, uid in self.name_uid_cache.iteritems():
+            for name, uid in self.name_uid_cache.items():
                 if uid == ldapid:
                     if name == 'SuperUser':
                         debug('idToName %d -> "SuperUser" catched', id)
@@ -843,8 +850,8 @@ if __name__ == '__main__':
     # Load configuration
     try:
         cfg = config(option.ini, default)
-    except Exception, e:
-        print>>sys.stderr, 'Fatal error, could not load config file from "%s"' % cfgfile
+    except Exception as e:
+        print('Fatal error, could not load config file from "%s"' % cfgfile, file=sys.stderr)
         sys.exit(1)
     
     
@@ -852,9 +859,9 @@ if __name__ == '__main__':
     if cfg.log.file:
         try:
             logfile = open(cfg.log.file, 'a')
-        except IOError, e:
+        except IOError as e:
             #print>>sys.stderr, str(e)
-            print>>sys.stderr, 'Fatal error, could not open logfile "%s"' % cfg.log.file
+            print('Fatal error, could not open logfile "%s"' % cfg.log.file, file=sys.stderr)
             sys.exit(1)
     else:
         logfile = logging.sys.stderr
@@ -877,8 +884,8 @@ if __name__ == '__main__':
         import daemon
     except ImportError:
         if option.force_daemon:
-            print>>sys.stderr, 'Fatal error, could not daemonize process due to missing "daemon" library, ' \
-            'please install the missing dependency and restart the authenticator'
+            print('Fatal error, could not daemonize process due to missing "daemon" library, ' \
+            'please install the missing dependency and restart the authenticator', file=sys.stderr)
             sys.exit(1)
         do_main_program()
     else:

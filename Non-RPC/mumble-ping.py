@@ -1,42 +1,53 @@
-#!/usr/bin/env python
-# -*- coding: utf-8
-# Based on pcgod's mumble-ping script found at http://0xy.org/mumble-ping.py.
+#!/usr/bin/env python3
 
 from struct import *
-import socket, sys, time, datetime
+from string import Template
+import socket, sys, time, datetime, argparse
 
-if len(sys.argv) < 3:
-	print "Usage: %s <host> <port>" % sys.argv[0]
-	sys.exit()
+if __name__ == '__main__':
+	parser = argparse.ArgumentParser()
+	parser.add_argument('host', type=str, help='hostname or IP')
+	parser.add_argument('port', type=int, help='port; default Mumble port is 64738')
+	parser.add_argument('--format', type=str, required=False, default='Version $v, $u/$m Users, $p, $b')
+	parser.add_argument('--verbose', '-v', dest='verbose', action='store_true')
+	parser.set_defaults(verbose=False)
+	args = parser.parse_args()
 
-host = sys.argv[1]
-port = int(sys.argv[2])
+	s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+	s.settimeout(1)
 
-s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-s.settimeout(1)
+	buf = pack(">iQ", 0, datetime.datetime.now().microsecond)
+	s.sendto(buf, (args.host, args.port))
 
-buf = pack(">iQ", 0, datetime.datetime.now().microsecond)
-s.sendto(buf, (host, port))
+	try:
+		data, addr = s.recvfrom(1024)
+	except socket.timeout:
+		print(f"{time.time()}:NaN:NaN")
+		sys.exit()
 
-try:
-	data, addr = s.recvfrom(1024)
-except socket.timeout:
-	print "%d:NaN:NaN" % (time.time())
-	sys.exit()
+	if args.verbose:
+		print(f"recvd {len(data)} bytes")
 
-print "recvd %d bytes" % len(data)
+	r = unpack(">bbbbQiii", data)
 
-r = unpack(">bbbbQiii", data)
+	version = '.'.join([str(v) for v in r[1:4]])
+	ts = r[4]
+	users = r[5]
+	max_users = r[6]
+	bandwidth = f"{r[7] / 1000}kbit/s"
 
-version = r[1:4]
-# r[0,1,2,3] = version
-# r[4] = ts
-# r[5] = users
-# r[6] = max users
-# r[7] = bandwidth
+	ping = (datetime.datetime.now().microsecond - r[4]) / 1000.0
+	if ping < 0:
+		ping = ping + 1000
+	ping = f"{ping:.1f}ms"
 
-ping = (datetime.datetime.now().microsecond - r[4]) / 1000.0
-if ping < 0: ping = ping + 1000
-
-print "Version %d.%d.%d, %d/%d Users, %.1fms, %dkbit/s" % (version + (r[5], r[6], ping, r[7]/1000))
-
+	lut = {
+		'v': version,
+		't': ts,
+		'u': users,
+		'm': max_users,
+		'p': ping,
+		'b': bandwidth,
+	}
+	t = Template(args.format)
+	print(t.substitute(**lut))
