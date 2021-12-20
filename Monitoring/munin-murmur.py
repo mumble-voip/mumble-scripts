@@ -2,7 +2,7 @@
 # -*- coding: utf-8
 #
 # munin-murmur.py
-# Copyright (c) 2010 - 2016, Natenom 
+# Copyright (c) 2010 - 2016, Natenom <natenom@natenom.com>
 #
 # All rights reserved.
 #
