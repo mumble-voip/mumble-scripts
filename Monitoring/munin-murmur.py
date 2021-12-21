@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8
 #
 # munin-murmur.py
@@ -49,10 +49,10 @@ show_channel_count = True # Number of channels on the server (including the root
 show_uptime = True # Uptime of the server (in days)
 
 #Path to Murmur.ice
-iceslice = "/usr/share/Ice/slice/Murmur.ice"
+iceslice = "/usr/share/slice/Murmur.ice"
 
 # Includepath for Ice, this is default for Debian
-iceincludepath = "/usr/share/Ice/slice"
+iceincludepath = "/usr/share/ice/slice"
 
 # Murmur-Port (not needed to work, only for display purposes)
 serverport = 64738
@@ -93,45 +93,46 @@ import Murmur
 
 if (sys.argv[1:]):
   if (sys.argv[1] == "config"):
-    print 'graph_title Murmur (Port %s)' % (serverport)
-    print 'graph_vlabel Count'
-    print 'graph_category mumble'
+    print('graph_title Murmur (Port %s)' % (serverport))
+    print('graph_vlabel Count')
+    print('graph_category mumble')
 
     if show_users_all:
-      print 'usersall.label Users (All)'
+      print('usersall.label Users (All)')
 
     if show_users_muted:
-      print 'usersmuted.label Users (Muted)'
+      print('usersmuted.label Users (Muted)')
 
     if show_users_unregistered:
-      print 'usersunregistered.label Users (Not registered)'
+      print('usersunregistered.label Users (Not registered)')
 
     if show_users_registered:
-      print 'usersregistered.label Users (Registered)'
+      print('usersregistered.label Users (Registered)')
 
     if show_ban_count:
-      print 'bancount.label Bans on server'
+      print('bancount.label Bans on server')
 
     if show_channel_count:
-      print 'channelcount.label Channel count/10'
+      print('channelcount.label Channel count/10')
 
     if show_uptime:
-      print 'uptime.label Uptime in days'
+      print('uptime.label Uptime in days')
 
+    ice.destroy()
     sys.exit(0)
 
 try:
   meta = Murmur.MetaPrx.checkedCast(ice.stringToProxy("Meta:tcp -h %s -p %s" % (icehost, iceport)))
 except Ice.ConnectionRefusedException:
-  print 'Could not connect to Murmur via Ice. Please check '
-  ice.shutdown()
+  print('Could not connect to Murmur via Ice. Please check ')
+  ice.destroy()
   sys.exit(1)
 
 try:
   server=meta.getServer(1)
 except Murmur.InvalidSecretException:
-  print 'Given icesecreatread password is wrong.'
-  ice.shutdown()
+  print('Given icesecreatread password is wrong.')
+  ice.destroy()
   sys.exit(1)
 
 # Initialize
@@ -146,7 +147,7 @@ uptime = 0
 # Collect the data...
 onlineusers = server.getUsers()
 
-for key in onlineusers.keys():
+for key in list(onlineusers.keys()):
   if onlineusers[key].userid == -1:
     users_unregistered += 1
 
@@ -164,24 +165,24 @@ for key in onlineusers.keys():
 
 # Output the date to munin...
 if show_users_all:
-  print "usersall.value %i" % (len(onlineusers))
+  print("usersall.value %i" % (len(onlineusers)))
 
 if show_users_muted:
-  print "usersmuted.value %i" % (users_muted)
+  print("usersmuted.value %i" % (users_muted))
 
 if show_users_registered:
-  print "usersregistered.value %i" % (users_registered)
+  print("usersregistered.value %i" % (users_registered))
 
 if show_users_unregistered:
-  print "usersunregistered.value %i" % (users_unregistered)
+  print("usersunregistered.value %i" % (users_unregistered))
 
 if show_ban_count:
-  print "bancount.value %i" % (len(server.getBans()))
+  print("bancount.value %i" % (len(server.getBans())))
 
 if show_channel_count:
-  print "channelcount.value %.1f" % (len(server.getChannels())/10)
+  print("channelcount.value %.1f" % (len(server.getChannels())/10))
 
 if show_uptime:
-  print "uptime.value %.2f" % (float(meta.getUptime())/60/60/24)
+  print("uptime.value %.2f" % (float(meta.getUptime())/60/60/24))
 
-ice.shutdown()
+ice.destroy()
