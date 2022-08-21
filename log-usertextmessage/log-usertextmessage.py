@@ -29,6 +29,18 @@
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+# This script connects to the Mumble server (all its contained running virtual servers) and logs user text messages to a log file.
+#
+# Opportunities for improvement:
+# 1. Handle ice secret:
+#    Consider this required if you use the script with a remote rather than localhost connection.
+#    Should be `communicator.getImplicitContext().put("secret", cfg.ice.secret)`.
+# 2. Support multiple vservers:
+#    It would make sense to use one log file per server, or at least log the server ID too. Logged session IDs may not be unique/deterministic without it.
+# 3. Daemonize:
+#    At the moment it uses `input()` to remain running until enter is pressed.
+#    When running as a server service, daemonization may make more sense, or some other appropriate way to remain open; e.g. until term signal is received.
+
 from datetime import datetime
 import time
 import logging
