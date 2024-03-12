@@ -1,6 +1,6 @@
 # Mice
 
-[`mice.py`](mice.py] is a very small Python script that demonstrates and simplifies setting up a connection to a Mumble Server through the Ice interface.
+[`mice.py`](mice.py) is a very small Python script that demonstrates and simplifies setting up a connection to a Mumble Server through the Ice interface.
 
 This script does nothing but save you a few lines you would have to type in on every start of a session otherwise.
 
@@ -31,7 +31,7 @@ python
 
 but it lacks tab-completion, highlighting etc. It is not a very comfortable way to explore the possibilities of the Ice interface.
 
-The alternative [http://ipython.scipy.org/ ipython] interactive python shell can - after installation - be launched with
+The alternative [ipython](http://ipython.scipy.org/) interactive python shell can - after installation - be launched with
 
 ```
 ipython
