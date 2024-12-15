@@ -149,8 +149,10 @@ default = { 'ldap':(('ldap_uri', str, 'ldap://127.0.0.1'),
                     ('display_attr', str, 'displayName'),
                     ('group_dn', str, 'ou=Groups,dc=example,dc=org'),
                     ('group_attr', str, 'member'),
+                    ('memberof_attr', str, 'memberOf'),
                     ('provide_info', x2bool, False),
                     ('mail_attr', str, 'mail'),
+                    ('provide_groups', x2bool, False),
                     ('provide_users', x2bool, False),
                     ('use_start_tls', x2bool, False)),
 
@@ -510,7 +512,11 @@ def do_main_program():
                     return (AUTH_REFUSED, None, None)
 
             # Search for the user.
-            res = ldap_conn.search_s(cfg.ldap.users_dn, ldap.SCOPE_SUBTREE, '(%s=%s)' % (cfg.ldap.username_attr, name), [cfg.ldap.number_attr, cfg.ldap.display_attr])
+            if cfg.ldap.provide_groups:
+                attrs = [cfg.ldap.number_attr, cfg.ldap.display_attr, cfg.ldap.memberof_attr]
+            else:
+                attrs = [cfg.ldap.number_attr, cfg.ldap.display_attr]
+            res = ldap_conn.search_s(cfg.ldap.users_dn, ldap.SCOPE_SUBTREE, '(%s=%s)' % (cfg.ldap.username_attr, name), attrs)
             if len(res) == 0:
                 warning("User " + name + " not found")
                 if cfg.user.reject_on_miss:
@@ -524,6 +530,14 @@ def do_main_program():
             displayName = match[1][cfg.ldap.display_attr][0].decode()
             user_dn = match[0]
             debug('User match found, display "' + displayName + '" with UID ' + repr(uid))
+            groups = []
+            if cfg.ldap.provide_groups and cfg.ldap.memberof_attr in match[1]:
+                groupsDN = match[1][cfg.ldap.memberof_attr]
+                for g in groupsDN:
+                    dn = ldap.dn.explode_dn(g, notypes=True)
+                    cn = dn[0]
+                    groups.append(cn)
+            debug('User has groups ' + str(groups))
                 
             # Optionally check groups.
             if cfg.ldap.group_dn != "" :
@@ -536,6 +550,7 @@ def do_main_program():
                 if len(res) < 1:
                     debug('User ' + name + ' failed with no group membership')
                     return (AUTH_REFUSED, None, None)
+
                     
             # Second bind to test user credentials if using bind_dn or discover_dn.
             if cfg.ldap.bind_dn or cfg.ldap.discover_dn:
@@ -560,7 +575,7 @@ def do_main_program():
             # Add the user/id combo to cache, then accept:
             self.name_uid_cache[displayName] = uid
             debug("Login accepted for " + name)
-            return (uid + cfg.user.id_offset, displayName, [])
+            return (uid + cfg.user.id_offset, displayName, groups)
             
         @fortifyIceFu((False, None))
         @checkSecret
