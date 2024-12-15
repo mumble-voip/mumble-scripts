@@ -90,7 +90,7 @@ default = {'database':(('lib', str, 'MySQLdb'),
                     
             'ice':(('host', str, '127.0.0.1'),
                    ('port', int, 6502),
-                   ('slice', str, 'Murmur.ice'),
+                   ('slice', str, 'MumbleServer.ice'),
                    ('secret', str, ''),
                    ('watchdog', int, 30)),
                    
@@ -255,7 +255,7 @@ def do_main_program():
     else:
         slicedir = ['-I' + slicedir]
     Ice.loadSlice('', slicedir + [cfg.ice.slice])
-    import Murmur
+    import MumbleServer
     
     class smfauthenticatorApp(Ice.Application):
         def run(self, args):
@@ -298,16 +298,16 @@ def do_main_program():
     
             info('Connecting to Ice server (%s:%d)', cfg.ice.host, cfg.ice.port)
             base = ice.stringToProxy('Meta:tcp -h %s -p %d' % (cfg.ice.host, cfg.ice.port))
-            self.meta = Murmur.MetaPrx.uncheckedCast(base)
+            self.meta = MumbleServer.MetaPrx.uncheckedCast(base)
         
             adapter = ice.createObjectAdapterWithEndpoints('Callback.Client', 'tcp -h %s' % cfg.ice.host)
             adapter.activate()
             
             metacbprx = adapter.addWithUUID(metaCallback(self))
-            self.metacb = Murmur.MetaCallbackPrx.uncheckedCast(metacbprx)
+            self.metacb = MumbleServer.MetaCallbackPrx.uncheckedCast(metacbprx)
             
             authprx = adapter.addWithUUID(smfauthenticator())
-            self.auth = Murmur.ServerUpdatingAuthenticatorPrx.uncheckedCast(authprx)
+            self.auth = MumbleServer.ServerUpdatingAuthenticatorPrx.uncheckedCast(authprx)
             
             return self.attachCallbacks()
         
@@ -328,11 +328,11 @@ def do_main_program():
                         if not quiet: info('Setting authenticator for virtual server %d', server.id())
                         server.setAuthenticator(self.auth)
                         
-            except (Murmur.InvalidSecretException, Ice.UnknownUserException, Ice.ConnectionRefusedException), e:
+            except (MumbleServer.InvalidSecretException, Ice.UnknownUserException, Ice.ConnectionRefusedException), e:
                 if isinstance(e, Ice.ConnectionRefusedException):
                     error('Server refused connection')
-                elif isinstance(e, Murmur.InvalidSecretException) or \
-                     isinstance(e, Ice.UnknownUserException) and (e.unknown == 'Murmur::InvalidSecretException'):
+                elif isinstance(e, MumbleServer.InvalidSecretException) or \
+                     isinstance(e, Ice.UnknownUserException) and (e.unknown == 'MumbleServer::InvalidSecretException'):
                     error('Invalid ice secret')
                 else:
                     # We do not actually want to handle this one, re-raise it
@@ -381,7 +381,7 @@ def do_main_program():
             
             if not current or 'secret' not in current.ctx or current.ctx['secret'] != cfg.ice.secret:
                 error('Server transmitted invalid secret. Possible injection attempt.')
-                raise Murmur.InvalidSecretException()
+                raise MumbleServer.InvalidSecretException()
             
             return func(*args, **kws)
         
@@ -416,9 +416,9 @@ def do_main_program():
             return newfunc
         return newdec
                 
-    class metaCallback(Murmur.MetaCallback):
+    class metaCallback(MumbleServer.MetaCallback):
         def __init__(self, app):
-            Murmur.MetaCallback.__init__(self)
+            MumbleServer.MetaCallback.__init__(self)
             self.app = app
 
         @fortifyIceFu()
@@ -433,8 +433,8 @@ def do_main_program():
                 try:
                     server.setAuthenticator(app.auth)
                 # Apparently this server was restarted without us noticing
-                except (Murmur.InvalidSecretException, Ice.UnknownUserException), e:
-                    if hasattr(e, "unknown") and e.unknown != "Murmur::InvalidSecretException":
+                except (MumbleServer.InvalidSecretException, Ice.UnknownUserException), e:
+                    if hasattr(e, "unknown") and e.unknown != "MumbleServer::InvalidSecretException":
                         # Special handling for Murmur 1.2.2 servers with invalid slice files
                         raise e
                     
@@ -468,10 +468,10 @@ def do_main_program():
     else:
         authenticateFortifyResult = (-2, None, None)
         
-    class smfauthenticator(Murmur.ServerUpdatingAuthenticator):
+    class smfauthenticator(MumbleServer.ServerUpdatingAuthenticator):
         texture_cache = {}
         def __init__(self):
-            Murmur.ServerUpdatingAuthenticator.__init__(self)
+            MumbleServer.ServerUpdatingAuthenticator.__init__(self)
 
         @fortifyIceFu(authenticateFortifyResult)
         @checkSecret
