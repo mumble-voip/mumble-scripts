@@ -1,0 +1,263 @@
+---
+
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+zabbix_export:
+  version: '6.0'
+  date: '2022-11-25T16:31:31Z'
+  groups:
+    -
+      uuid: 7df96b18c230490a9a0a9e2307226338
+      name: Templates
+    -
+      uuid: a571c0d144b14fd4a87a9d9b2aa9fcd6
+      name: Templates/Applications
+  templates:
+    -
+      uuid: d2218fb74ae14a8b843eff463820e082
+      template: 'Murmur by zabbix agent'
+      name: 'Murmur by zabbix agent'
+      groups:
+        -
+          name: Templates
+        -
+          name: Templates/Applications
+      items:
+        -
+          uuid: 00396742acba478b805e43251ea060d8
+          name: 'Murmur: Channel'
+          type: DEPENDENT
+          key: murmur.channelcount
+          delay: '0'
+          value_type: FLOAT
+          preprocessing:
+            -
+              type: REGEX
+              parameters:
+                - channelcount.value\s+(\S+)
+                - \1
+            -
+              type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+          master_item:
+            key: murmur.stats
+        -
+          uuid: 179e06574f86490fa708d13ee5fae1f1
+          name: 'Murmur stats'
+          key: murmur.stats
+          trends: '0'
+          value_type: TEXT
+          tags:
+            -
+              tag: component
+              value: raw
+        -
+          uuid: 1e15d47f9f5c460097df51ad0b610cd0
+          name: 'Murmur: Bans'
+          type: DEPENDENT
+          key: murmur.unregistered
+          delay: '0'
+          preprocessing:
+            -
+              type: REGEX
+              parameters:
+                - bancount.value\s+(\d+)
+                - \1
+            -
+              type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+          master_item:
+            key: murmur.stats
+        -
+          uuid: 13a80a09bdc24b2dbf9e475e088eec67
+          name: 'Murmur: Uptime'
+          type: DEPENDENT
+          key: murmur.uptime
+          delay: '0'
+          value_type: FLOAT
+          preprocessing:
+            -
+              type: REGEX
+              parameters:
+                - uptime.value\s+(\S+)
+                - \1
+            -
+              type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+          master_item:
+            key: murmur.stats
+        -
+          uuid: 5ec4e0fff16540a5a548bf696a239ac1
+          name: 'Murmur: Users - All'
+          type: DEPENDENT
+          key: 'murmur.users[all]'
+          delay: '0'
+          preprocessing:
+            -
+              type: REGEX
+              parameters:
+                - usersall.value\s+(\d+)
+                - \1
+            -
+              type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+          master_item:
+            key: murmur.stats
+        -
+          uuid: 3e191b370b714970a75d31d8374c5a08
+          name: 'Murmur: Users - Muted'
+          type: DEPENDENT
+          key: 'murmur.users[muted]'
+          delay: '0'
+          preprocessing:
+            -
+              type: REGEX
+              parameters:
+                - usersmuted.value\s+(\d+)
+                - \1
+            -
+              type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+          master_item:
+            key: murmur.stats
+        -
+          uuid: bde827521eb143009a3b9f311102adcd
+          name: 'Murmur: Users - Registered'
+          type: DEPENDENT
+          key: 'murmur.users[registered]'
+          delay: '0'
+          preprocessing:
+            -
+              type: REGEX
+              parameters:
+                - usersregistered.value\s+(\d+)
+                - \1
+            -
+              type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+          master_item:
+            key: murmur.stats
+        -
+          uuid: 28cb8bbbb341475aa31412044b00301c
+          name: 'Murmur: Users - Enregistered'
+          type: DEPENDENT
+          key: 'murmur.users[unregistered]'
+          delay: '0'
+          preprocessing:
+            -
+              type: REGEX
+              parameters:
+                - usersunregistered.value\s+(\d+)
+                - \1
+            -
+              type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+          master_item:
+            key: murmur.stats
+      tags:
+        -
+          tag: class
+          value: application
+        -
+          tag: target
+          value: murmur
+      dashboards:
+        -
+          uuid: 72a633d3034c4680b05253ade1836488
+          name: Murmur
+          pages:
+            -
+              widgets:
+                -
+                  type: ITEM
+                  name: Bans
+                  x: '20'
+                  'y': '6'
+                  width: '4'
+                  height: '3'
+                  fields:
+                    -
+                      type: ITEM
+                      name: itemid
+                      value:
+                        host: 'Murmur by zabbix agent'
+                        key: murmur.unregistered
+                -
+                  type: ITEM
+                  name: Channel
+                  x: '20'
+                  'y': '3'
+                  width: '4'
+                  height: '3'
+                  fields:
+                    -
+                      type: ITEM
+                      name: itemid
+                      value:
+                        host: 'Murmur by zabbix agent'
+                        key: murmur.channelcount
+                -
+                  type: ITEM
+                  name: Uptime
+                  x: '20'
+                  width: '4'
+                  height: '3'
+                  fields:
+                    -
+                      type: ITEM
+                      name: itemid
+                      value:
+                        host: 'Murmur by zabbix agent'
+                        key: murmur.uptime
+                -
+                  type: GRAPH_CLASSIC
+                  name: Users
+                  width: '20'
+                  height: '9'
+                  fields:
+                    -
+                      type: GRAPH
+                      name: graphid
+                      value:
+                        host: 'Murmur by zabbix agent'
+                        name: 'Murmur: Users'
+  graphs:
+    -
+      uuid: 01797f2c63fc46c9bb763489c1d344ac
+      name: 'Murmur: Users'
+      ymin_type_1: FIXED
+      graph_items:
+        -
+          color: 199C0D
+          calc_fnc: ALL
+          item:
+            host: 'Murmur by zabbix agent'
+            key: 'murmur.users[all]'
+        -
+          sortorder: '1'
+          color: F63100
+          calc_fnc: ALL
+          item:
+            host: 'Murmur by zabbix agent'
+            key: 'murmur.users[unregistered]'
+        -
+          sortorder: '2'
+          color: 2774A4
+          calc_fnc: ALL
+          item:
+            host: 'Murmur by zabbix agent'
+            key: 'murmur.users[muted]'
+        -
+          sortorder: '3'
+          color: F7941D
+          calc_fnc: ALL
+          item:
+            host: 'Murmur by zabbix agent'
+            key: 'murmur.users[registered]'
