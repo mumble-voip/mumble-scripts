@@ -1,4 +1,4 @@
-mumble-scripts
+Mumble Scripts
 ==============
 
 Mumble scripts is a place for gathering various scripts written for the
