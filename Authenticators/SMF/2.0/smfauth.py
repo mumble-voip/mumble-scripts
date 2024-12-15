@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8
 
 # Copyright (C) 2010 Stefan Hacker <dd0t@users.sourceforge.net>
@@ -34,7 +34,7 @@
 #                 a Murmur server against a SMF forum database
 #
 #    Requirements:
-#        * python >=2.4 and the following python modules:
+#        * python >=3.0 and the following python modules:
 #            * ice-python
 #            * MySQLdb
 #            * daemon (when run as a daemon)
@@ -42,10 +42,10 @@
 
 import sys
 import Ice
-import thread
-import urllib2
+import _thread
+import urllib.request, urllib.error, urllib.parse
 import logging
-import ConfigParser
+import configparser
 import bcrypt
 
 from threading  import Timer
@@ -67,7 +67,7 @@ def x2bool(s):
     """Helper function to convert strings from the config to bool"""
     if isinstance(s, bool):
         return s
-    elif isinstance(s, basestring):
+    elif isinstance(s, str):
         return s.lower() in ['1', 'true']
     raise ValueError()
 
@@ -96,7 +96,7 @@ default = {'database':(('lib', str, 'MySQLdb'),
                    
             'iceraw':None,
                    
-            'murmur':(('servers', lambda x:map(int, x.split(',')), []),),
+            'murmur':(('servers', lambda x:list(map(int, x.split(','))), []),),
             'glacier':(('enabled', x2bool, False),
                        ('user', str, 'smf'),
                        ('password', str, 'secret'),
@@ -116,23 +116,23 @@ class config(object):
 
     def __init__(self, filename = None, default = None):
         if not filename or not default: return
-        cfg = ConfigParser.ConfigParser()
+        cfg = configparser.ConfigParser()
         cfg.optionxform = str
         cfg.read(filename)
         
-        for h,v in default.iteritems():
+        for h,v in default.items():
             if not v:
                 # Output this whole section as a list of raw key/value tuples
                 try:
                     self.__dict__[h] = cfg.items(h)
-                except ConfigParser.NoSectionError:
+                except configparser.NoSectionError:
                     self.__dict__[h] = []
             else:
                 self.__dict__[h] = config()
                 for name, conv, vdefault in v:
                     try:
                         self.__dict__[h].__dict__[name] = conv(cfg.get(h, name))
-                    except (ValueError, ConfigParser.NoSectionError, ConfigParser.NoOptionError):
+                    except (ValueError, configparser.NoSectionError, configparser.NoOptionError):
                         self.__dict__[h].__dict__[name] = vdefault
                     
 def entity_decode(string):
@@ -173,7 +173,7 @@ class threadDB(object):
     db_connections = {}
 
     def connection(cls):
-        tid = thread.get_ident()
+        tid = _thread.get_ident()
         try:
             con = cls.db_connections[tid]
         except:
@@ -190,7 +190,7 @@ class threadDB(object):
                 # Transactional engines like InnoDB initiate a transaction even
                 # on SELECTs-only. Thus, we auto-commit so smfauth gets recent data.
                 con.autocommit(True)
-            except db.Error, e:
+            except db.Error as e:
                 error('Could not connect to database: %s', str(e))
                 raise threadDbException()
             cls.db_connections[tid] = con
@@ -213,7 +213,7 @@ class threadDB(object):
         c = cls.cursor()
         try:
             c.execute(*args, **kwargs)
-        except db.OperationalError, e:
+        except db.OperationalError as e:
             error('Database operational error %d: %s', e.args[0], e.args[1])
             c.close()
             cls.invalidate_connection()
@@ -229,7 +229,7 @@ class threadDB(object):
     execute = classmethod(execute)
     
     def invalidate_connection(cls):
-        tid = thread.get_ident()
+        tid = _thread.get_ident()
         con = cls.db_connections.pop(tid, None)
         if con:
             debug('Invalidate connection to database for thread %d', tid)
@@ -328,7 +328,7 @@ def do_main_program():
                         if not quiet: info('Setting authenticator for virtual server %d', server.id())
                         server.setAuthenticator(self.auth)
                         
-            except (MumbleServer.InvalidSecretException, Ice.UnknownUserException, Ice.ConnectionRefusedException), e:
+            except (MumbleServer.InvalidSecretException, Ice.UnknownUserException, Ice.ConnectionRefusedException) as e:
                 if isinstance(e, Ice.ConnectionRefusedException):
                     error('Server refused connection')
                 elif isinstance(e, MumbleServer.InvalidSecretException) or \
@@ -356,7 +356,7 @@ def do_main_program():
                     self.failedWatch = True
                 else:
                     self.failedWatch = False
-            except Ice.Exception, e:
+            except Ice.Exception as e:
                 error('Failed connection check, will retry in next watchdog run (%ds)', cfg.ice.watchdog)
                 debug(str(e))
                 self.failedWatch = True
@@ -400,7 +400,7 @@ def do_main_program():
             def newfunc(*args, **kws):
                 try:
                     return func(*args, **kws)
-                except Exception, e:
+                except Exception as e:
                     catch = True
                     for ex in exceptions:
                         if isinstance(e, ex):
@@ -433,7 +433,7 @@ def do_main_program():
                 try:
                     server.setAuthenticator(app.auth)
                 # Apparently this server was restarted without us noticing
-                except (MumbleServer.InvalidSecretException, Ice.UnknownUserException), e:
+                except (MumbleServer.InvalidSecretException, Ice.UnknownUserException) as e:
                     if hasattr(e, "unknown") and e.unknown != "MumbleServer::InvalidSecretException":
                         # Special handling for Murmur 1.2.2 servers with invalid slice files
                         raise e
@@ -661,10 +661,10 @@ def do_main_program():
                 return self.texture_cache[avatar_file]
             
             try:
-                handle = urllib2.urlopen(avatar_file)
+                handle = urllib.request.urlopen(avatar_file)
                 filecontent = handle.read()
                 handle.close()
-            except urllib2.URLError, e:
+            except urllib.error.URLError as e:
                 warning('Image download for "%s" (%d) failed: %s', avatar_file, id, str(e))
                 return FALL_THROUGH
             
@@ -810,11 +810,11 @@ def smf_check_hash(password, hash, username):
 
     try:
       # SMF 2.1 uses a bcrypt hash, try that first
-      ret = bcrypt.hashpw(username.lower().encode('utf-8') + password, hash.encode('utf-8')) == hash
+      ret = bcrypt.hashpw((username.lower() + password).encode('utf-8'), hash.encode('utf-8')) == hash
     except ValueError:
       # The sha1 password hash from SMF 2.0 and earlier will cause a salt value error
       # In that case, try the legacy sha1 hash
-      ret = sha1(username.lower().encode('utf8') + password).hexdigest() == hash
+      ret = sha1((username.lower() + password).encode('utf-8')).hexdigest() == hash
 
     return ret
 
@@ -843,15 +843,15 @@ if __name__ == '__main__':
     # Load configuration
     try:
         cfg = config(option.ini, default)
-    except Exception, e:
-        print>>sys.stderr, 'Fatal error, could not load config file from "%s"' % cfgfile
+    except Exception as e:
+        print('Fatal error, could not load config file from "%s"' % cfgfile, file=sys.stderr)
         sys.exit(1)
         
     try:
         db = __import__(cfg.database.lib)
-    except ImportError, e:
-        print>>sys.stderr, 'Fatal error, could not import database library "%s", '\
-        'please install the missing dependency and restart the authenticator' % cfg.database.lib
+    except ImportError as e:
+        print('Fatal error, could not import database library "%s", '\
+        'please install the missing dependency and restart the authenticator' % cfg.database.lib, file=sys.stderr)
         sys.exit(1)
     
     
@@ -859,9 +859,9 @@ if __name__ == '__main__':
     if cfg.log.file:
         try:
             logfile = open(cfg.log.file, 'a')
-        except IOError, e:
+        except IOError as e:
             #print>>sys.stderr, str(e)
-            print>>sys.stderr, 'Fatal error, could not open logfile "%s"' % cfg.log.file
+            print('Fatal error, could not open logfile "%s"' % cfg.log.file, file=sys.stderr)
             sys.exit(1)
     else:
         logfile = logging.sys.stderr
@@ -884,8 +884,8 @@ if __name__ == '__main__':
         import daemon
     except ImportError:
         if option.force_daemon:
-            print>>sys.stderr, 'Fatal error, could not daemonize process due to missing "daemon" library, ' \
-            'please install the missing dependency and restart the authenticator'
+            print('Fatal error, could not daemonize process due to missing "daemon" library, ' \
+            'please install the missing dependency and restart the authenticator', file=sys.stderr)
             sys.exit(1)
         do_main_program()
     else:
