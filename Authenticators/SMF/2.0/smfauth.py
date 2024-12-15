@@ -810,7 +810,7 @@ def smf_check_hash(password, hash, username):
 
     try:
       # SMF 2.1 uses a bcrypt hash, try that first
-      ret = bcrypt.hashpw(username.lower().encode('utf-8') + password, hash.encode('utf-8')) == hash
+      ret = bcrypt.hashpw((username.lower() + password).encode('utf-8'), hash.encode('utf-8')) == hash
     except ValueError:
       # The sha1 password hash from SMF 2.0 and earlier will cause a salt value error
       # In that case, try the legacy sha1 hash
