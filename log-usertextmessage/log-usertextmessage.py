@@ -52,7 +52,8 @@ try:
     import Ice
     import IcePy
 except ImportError:
-    print('ERROR: The python modules Ice and IcePy are required to run Mumo. Install with sudo apt-get install python-zeroc-ice or python -m pip install zeroc-ice', file=sys.stdout)
+    print('ERROR: The python modules Ice and IcePy are required to run Mumo. Install with sudo apt-get install python3-zeroc-ice zeroc-ice-compilers or python -m pip install zeroc-ice', file=sys.stdout)
+    print('and then, if necessary, run `slice2py -I/usr/share/ice/slice/ /etc/mumble/MumbleServer.ice` in this directory.', file=sys.stdout)
     sys.exit(1)
 
 def ice_init():
@@ -116,8 +117,11 @@ if __name__ == '__main__':
         callbackClient = communicator.createObjectAdapterWithEndpoints('Callback.Client', 'tcp -h %s' % host)
         callbackClient.activate()
 
-        # noinspection PyUnresolvedReferences
-        import Murmur
+        try:
+            # noinspection PyUnresolvedReferences
+            import Murmur
+        except ImportError:
+            import MumbleServer as Murmur
 
         class ServerCallbackClass(Murmur.ServerCallback):
             def userConnected(self, user, icepy): return
