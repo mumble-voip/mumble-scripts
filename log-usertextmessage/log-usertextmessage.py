@@ -48,9 +48,11 @@ import os
 import sys
 import tempfile
 
+from typing import List
+
 try:
-    import Ice
-    import IcePy
+    import Ice  # type: ignore
+    import IcePy  # type: ignore
 except ImportError:
     print('ERROR: The python modules Ice and IcePy are required to run Mumo. Install with sudo apt-get install python3-zeroc-ice zeroc-ice-compilers or python -m pip install zeroc-ice', file=sys.stdout)
     print('and then, if necessary, run `slice2py -I/usr/share/ice/slice/ /etc/mumble/MumbleServer.ice` in this directory.', file=sys.stdout)
@@ -110,7 +112,7 @@ icesecret = ''
 callback_port = -1
 callback_host = '127.0.0.1'
 metaProxyString = 'Meta:tcp -h %s -p %d' % (host, port)
-vServerIdWhitelist = []
+vServerIdWhitelist: List[int] = []
 logfpath = 'usertextmessage.log'
 printMsg = False
 
@@ -126,7 +128,7 @@ if __name__ == '__main__':
 
         try:
             # noinspection PyUnresolvedReferences
-            import Murmur
+            import Murmur  # type: ignore
         except ImportError:
             import MumbleServer as Murmur
 
