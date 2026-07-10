@@ -10,5 +10,5 @@ are not bothered by being poked by people if it breaks feel free to create a pul
 request.
 
 If you notice anything wrong with the existing scripts please report a bug
-using the github issue tracker at https://github.com/mumble-voip/mumble-scripts/issues .
+using the github issue tracker at <https://github.com/mumble-voip/mumble-scripts/issues>.
 Of course we also take patches.
