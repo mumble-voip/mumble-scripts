@@ -48,12 +48,16 @@ import os
 import sys
 import tempfile
 
+from typing import List
+
 try:
-    import Ice
-    import IcePy
+    import Ice  # type: ignore
+    import IcePy  # type: ignore
 except ImportError:
-    print('ERROR: The python modules Ice and IcePy are required to run Mumo. Install with sudo apt-get install python-zeroc-ice or python -m pip install zeroc-ice', file=sys.stdout)
+    print('ERROR: The python modules Ice and IcePy are required to run Mumo. Install with sudo apt-get install python3-zeroc-ice zeroc-ice-compilers or python -m pip install zeroc-ice', file=sys.stdout)
+    print('and then, if necessary, run `slice2py -I/usr/share/ice/slice/ /etc/mumble/MumbleServer.ice` in this directory.', file=sys.stdout)
     sys.exit(1)
+
 
 def ice_init():
     logging.debug('Initializing Ice...')
@@ -66,6 +70,7 @@ def ice_init():
     ice = Ice.initialize(initdata)
     return ice
 
+
 def dynload_slice(prx):
     logging.info("Loading slice from server...")
     try:
@@ -74,7 +79,8 @@ def dynload_slice(prx):
         if IcePy.intVersion() < 30500:
             raise Exception('Ice < 3.5 not supported')
 
-        op = IcePy.Operation('getSlice', Ice.OperationMode.Idempotent, Ice.OperationMode.Idempotent, True, None, (), (), (), ((), IcePy._t_string, False, 0), ())
+        op = IcePy.Operation('getSlice', Ice.OperationMode.Idempotent, Ice.OperationMode.Idempotent,
+                             True, None, (), (), (), ((), IcePy._t_string, False, 0), ())
 
         slice = op.invoke(prx, ((), None))
         return slice
@@ -83,18 +89,21 @@ def dynload_slice(prx):
         logging.exception(e)
         raise
 
+
 def tmpWriteLoad_slice(slice):
-        (dynslicefiledesc, dynslicefilepath) = tempfile.mkstemp(suffix='.ice')
-        dynslicefile = os.fdopen(dynslicefiledesc, 'w')
-        dynslicefile.write(slice)
-        dynslicefile.flush()
-        load_slice(dynslicefilepath)
-        dynslicefile.close()
-        os.remove(dynslicefilepath)
+    (dynslicefiledesc, dynslicefilepath) = tempfile.mkstemp(suffix='.ice')
+    dynslicefile = os.fdopen(dynslicefiledesc, 'w')
+    dynslicefile.write(slice)
+    dynslicefile.flush()
+    load_slice(dynslicefilepath)
+    dynslicefile.close()
+    os.remove(dynslicefilepath)
+
 
 def load_slice(slice_fpath):
     slicedir = Ice.getSliceDir()
     Ice.loadSlice('', ['-I' + slicedir, slice_fpath])
+
 
 host = '127.0.0.1'
 port = 6502
@@ -103,7 +112,7 @@ icesecret = ''
 callback_port = -1
 callback_host = '127.0.0.1'
 metaProxyString = 'Meta:tcp -h %s -p %d' % (host, port)
-vServerIdWhitelist = []
+vServerIdWhitelist: List[int] = []
 logfpath = 'usertextmessage.log'
 printMsg = False
 
@@ -113,11 +122,15 @@ if __name__ == '__main__':
         slice = dynload_slice(metaProxyAnon)
         tmpWriteLoad_slice(slice)
 
-        callbackClient = communicator.createObjectAdapterWithEndpoints('Callback.Client', 'tcp -h %s' % host)
+        callbackClient = communicator.createObjectAdapterWithEndpoints(
+            'Callback.Client', 'tcp -h %s' % host)
         callbackClient.activate()
 
-        # noinspection PyUnresolvedReferences
-        import Murmur
+        try:
+            # noinspection PyUnresolvedReferences
+            import Murmur  # type: ignore
+        except ImportError:
+            import MumbleServer as Murmur
 
         class ServerCallbackClass(Murmur.ServerCallback):
             def userConnected(self, user, icepy): return
@@ -133,22 +146,22 @@ if __name__ == '__main__':
                 timestamp = utc_time.strftime('%Y-%m-%d %H:%M:%S')
 
                 logMsg = '[{}][{}:{}:{}][{}:{}:{}] {}\n'.format(
-                      timestamp
-                    , user.session, user.userid, user.name
-                    , str.join(',', list(map(str, message.sessions))), str.join(',', list(map(str, message.channels))), str.join(',', list(map(str, message.trees)))
-                    , message.text)
-                if printMsg: print(logMsg)
+                      timestamp, user.session, user.userid, user.name, str.join(',', list(map(str, message.sessions))), str.join(',', list(map(str, message.channels))), str.join(',', list(map(str, message.trees))), message.text)
+                if printMsg:
+                    print(logMsg)
                 with open(logfpath, 'a') as logfile:
                     logfile.write(logMsg)
 
         serverCallbackProxy = callbackClient.addWithUUID(ServerCallbackClass())
-        serverCallback = Murmur.ServerCallbackPrx.checkedCast(serverCallbackProxy)
+        serverCallback = Murmur.ServerCallbackPrx.checkedCast(
+            serverCallbackProxy)
 
         metaProxy = Murmur.MetaPrx.checkedCast(metaProxyAnon)
 
         servers = metaProxy.getBootedServers()
         for server in servers:
-            if vServerIdWhitelist and server.id() in vServerIdWhitelist: continue
+            if vServerIdWhitelist and server.id() in vServerIdWhitelist:
+                continue
 
             logging.info('Setting up for virtual server %d' % server.id())
             server.addCallback(serverCallback)
